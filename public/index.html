@@ -3,19 +3,26 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0c3b2e">
+  <meta name="theme-color" content="#f5f6f2">
   <title>Placar da Pelada</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚽</text></svg>">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/icon-192.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&amp;family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <div id="auth" class="auth" hidden>
     <div class="auth-box">
-      <div class="auth-logo"><img src="/icon-192.png" alt="" width="72" height="72"><h1>Placar da Pelada</h1></div>
+      <div class="auth-logo">
+        <img src="/icon-192.png" alt="" width="56" height="56">
+        <h1>Placar da Pelada</h1>
+        <p>Gols, times e fila de próximos, ao vivo para todo mundo.</p>
+      </div>
       <div class="auth-tabs" role="tablist">
         <button type="button" data-auth="login" class="on" role="tab">Entrar</button>
         <button type="button" data-auth="register" role="tab">Criar conta</button>
@@ -47,10 +54,12 @@
   </div>
 
   <header class="top">
-    <div class="brand">⚽ Placar da Pelada</div>
+    <div class="brand">
+      <span class="brand-word">PELADA</span>
+      <span id="conn" class="conn" title="Conexão em tempo real">Conectando</span>
+    </div>
     <div class="top-actions">
-      <button id="btnMe" class="chip" data-act="go" data-tab="settings" title="Minha conta"></button>
-      <span id="conn" class="conn" title="Conexão em tempo real"></span>
+      <button id="btnMe" class="avatar" data-act="accountMenu" aria-label="Minha conta e ajustes"></button>
     </div>
   </header>
   <div id="banner" class="banner" hidden></div>
@@ -62,23 +71,13 @@
     <!-- TIMES -->
     <section id="view-teams" class="view">
       <div class="card">
-        <h2>Confirmação por link</h2>
-        <p class="muted">Abra a lista para o dia do jogo e mande o link no grupo. Cada um marca "vou" ou "não vou" no próprio celular.</p>
-        <div class="rsvp-open">
-          <input id="rsvpDate" type="date" aria-label="Data do jogo">
-          <button class="small" data-act="rsvpOpen">Abrir lista</button>
-        </div>
-        <div id="rsvpBox"></div>
-      </div>
-
-      <div class="card">
         <div class="row-between">
-          <h2>1. Presença de hoje</h2>
+          <h2>Quem veio hoje</h2>
           <button class="ghost small" data-act="newDay">Novo dia</button>
         </div>
         <div id="dayBanner"></div>
         <p id="presenceSummary" class="muted"></p>
-        <input id="presenceSearch" type="search" placeholder="Buscar jogador…" autocomplete="off">
+        <input id="presenceSearch" type="search" placeholder="Buscar jogador" aria-label="Buscar jogador" autocomplete="off">
         <div class="row-btns">
           <button class="small" data-act="presenceAll">Marcar todos</button>
           <button class="small ghost" data-act="presenceNone">Desmarcar todos</button>
@@ -87,28 +86,39 @@
       </div>
 
       <div class="card">
-        <h2>2. Sortear times</h2>
-        <p class="muted">Usa só quem está presente. Os 2 primeiros times jogam, os outros ficam de próximo e quem sobrar fica avulso.</p>
+        <h2>Sortear times</h2>
+        <p class="muted">Usa só quem veio. Os 2 primeiros times jogam, os outros ficam de próximo.</p>
         <div class="form-grid">
           <label>Quantidade de times
             <select id="teamCount"></select>
           </label>
-          <label>Duração da partida (min)
+          <label>Duração (min)
             <input id="duration" type="number" min="1" max="120" inputmode="numeric">
           </label>
         </div>
         <div id="teamNames" class="team-names"></div>
         <div class="row-btns">
-          <button data-act="balance" class="primary">Sortear com os presentes</button>
-          <button data-act="clearSel" class="ghost">Limpar</button>
+          <button data-act="balance" class="primary big">Sortear com quem veio</button>
+          <button data-act="clearSel" class="ghost small">Limpar sorteio</button>
         </div>
       </div>
       <div id="builderPreview" class="teams-grid multi"></div>
-      <div class="card">
-        <h3>Ajuste manual <small class="muted">toque no jogador para trocar de time</small></h3>
+      <details class="card">
+        <summary>Ajustar times na mão</summary>
+        <p class="muted">Toque no jogador para trocar de time.</p>
         <div id="builderPool" class="pool"></div>
-      </div>
+      </details>
       <button data-act="createMatch" class="primary big">Criar partida</button>
+
+      <details class="card">
+        <summary>Confirmação de presença por link</summary>
+        <p class="muted">Abra a lista para o dia do jogo e mande o link no grupo. Cada um marca "vou" ou "não vou" no próprio celular.</p>
+        <div class="rsvp-open">
+          <input id="rsvpDate" type="date" aria-label="Data do jogo">
+          <button class="small" data-act="rsvpOpen">Abrir lista</button>
+        </div>
+        <div id="rsvpBox"></div>
+      </details>
     </section>
 
     <!-- PRÓXIMOS -->
@@ -116,6 +126,7 @@
 
     <!-- JOGADORES -->
     <section id="view-players" class="view">
+      <button class="ghost small back-btn" data-act="go" data-tab="match"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>Voltar</button>
       <form id="playerForm" class="card" autocomplete="off">
         <h2 id="playerFormTitle">Cadastrar jogador</h2>
         <div class="form-grid">
@@ -150,6 +161,7 @@
 
     <!-- AJUSTES -->
     <section id="view-settings" class="view">
+      <button class="ghost small back-btn" data-act="go" data-tab="match"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>Voltar</button>
       <div class="card">
         <h2>👤 Minha conta</h2>
         <div id="setAccount"></div>
@@ -211,13 +223,11 @@
     </section>
   </main>
 
-  <nav class="tabs">
-    <button data-tab="match"><span class="ico">⏱️</span><span>Partida</span></button>
-    <button data-tab="teams"><span class="ico">📅</span><span>Hoje</span></button>
-    <button data-tab="queue"><span class="ico">📋</span><span>Próximos</span></button>
-    <button data-tab="players"><span class="ico">👤</span><span>Jogadores</span></button>
-    <button data-tab="stats"><span class="ico">📊</span><span>Stats</span></button>
-    <button data-tab="settings"><span class="ico">⚙️</span><span>Ajustes</span></button>
+  <nav class="tabs" aria-label="Navegação">
+    <button data-tab="match"><span class="ico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 2h6"/></svg></span><span>Jogo</span></button>
+    <button data-tab="teams"><span class="ico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="3"/><path d="M8 3v4M16 3v4M8.5 14l2.5 2.5 5-5"/></svg></span><span>Hoje</span></button>
+    <button data-tab="queue"><span class="ico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span><span>Fila</span></button>
+    <button data-tab="stats"><span class="ico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 20V11M12 20V5M19 20v-6"/></svg></span><span>Stats</span></button>
   </nav>
 
   <div id="modal" class="modal" hidden>

@@ -2,7 +2,7 @@
 // Service worker: lets the app be installed and open offline.
 // Pages and assets: network first (always the latest version after a
 // deploy), cache as fallback. API calls are never cached.
-const CACHE = 'pelada-v2';
+const CACHE = 'pelada-v3';
 const SHELL = ['/', '/index.html', '/app.js', '/style.css', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/confirmar.html'];
 
 self.addEventListener('install', (event) => {
