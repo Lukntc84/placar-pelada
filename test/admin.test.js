@@ -141,6 +141,12 @@ test('RSVP: each player confirms only for themselves, only while open', async ()
     assert.deepEqual(r.yes, [ana, beto]);
     assert.deepEqual(r.no, []);
 
+    // Organizer removes someone who confirmed but won't come (neither list).
+    await req('POST', '/api/rsvp/answer', { playerId: beto, going: null });
+    r = await req('GET', '/api/rsvp');
+    assert.deepEqual(r.yes, [ana]);
+    assert.deepEqual(r.no, []);
+
     await req('POST', '/api/rsvp/close', {});
     assert.equal((await asAna('POST', '/api/rsvp/answer', { going: false })).code, 'CLOSED');
   } finally { await stop(); }

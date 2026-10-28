@@ -891,7 +891,8 @@ function renderRsvp() {
     <div class="rsvp-status ${r.open ? 'on' : ''}">
       <b>${fmtDate(r.date)}</b> · ${r.open ? 'lista aberta' : 'lista fechada'}
     </div>
-    <p><b>Vão (${r.yes.length}):</b> ${names(r.yes)}</p>
+    <p><b>Vão (${r.yes.length})</b> <small class="muted">toque no ✕ para tirar quem desistiu</small></p>
+    <div class="wteam-players">${r.yes.filter((id) => player(id)?.active).map((id) => `<span class="wp">${esc(pname(id))}<button class="x" data-act="rsvpRemove" data-player="${id}" aria-label="Tirar ${esc(pname(id))} da lista de confirmados">✕</button></span>`).join('') || '<span class="muted">Ninguém ainda.</span>'}</div>
     <p class="muted"><b>Não vão (${r.no.length}):</b> ${names(r.no)}</p>
     <div class="row-btns">
       ${r.open ? `<button class="small primary" data-act="rsvpShare">${ICON.share}Mandar link no grupo</button>` : ''}
@@ -1673,6 +1674,12 @@ const actions = {
     }
     try { await navigator.clipboard.writeText(text); toast('Link copiado! Cole no grupo.', 'ok'); }
     catch { prompt('Copie o link:', url); }
+  },
+  async rsvpRemove(d) {
+    const name = pname(d.player);
+    if (!confirm(`Tirar ${name} da lista de confirmados?${isPresent(d.player) ? ' Ele também já está marcado como presente: desmarque em "Quem veio hoje" se não veio.' : ''}`)) return;
+    const r = await act('POST', '/api/rsvp/answer', { playerId: d.player, going: null });
+    if (r?.ok) toast(`${name} saiu da lista.`, 'ok');
   },
   rsvpApply() {
     const ids = S.rsvp.yes.filter((id) => player(id)?.active && !isPresent(id));

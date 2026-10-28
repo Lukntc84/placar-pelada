@@ -470,3 +470,4 @@ body.logged-out .top, body.logged-out main, body.logged-out .tabs, body.logged-o
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+#rsvpBox .wp { background: var(--surface-2); }
