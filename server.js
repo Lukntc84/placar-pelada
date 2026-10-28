@@ -17,7 +17,24 @@ const backups = createBackups(store);
 const app = express();
 app.set('trust proxy', true);
 app.disable('x-powered-by');
-app.use(express.static(path.join(__dirname, 'public')));
+// The page asks for app.js/style.css with a version taken from their content,
+// so a CDN or browser cache can never pair a new page with an old script.
+const PUBLIC_DIR = path.join(__dirname, 'public');
+const readPublic = (f) => require('fs').readFileSync(path.join(PUBLIC_DIR, f), 'utf8');
+const BUILD = crypto.createHash('sha1').update(readPublic('app.js') + readPublic('style.css')).digest('hex').slice(0, 10);
+const INDEX_HTML = readPublic('index.html')
+  .replace('href="/style.css"', `href="/style.css?v=${BUILD}"`)
+  .replace('src="/app.js"', `src="/app.js?v=${BUILD}"`);
+app.get(['/', '/index.html'], (req, res) => {
+  res.set('Cache-Control', 'no-cache');
+  res.type('html').send(INDEX_HTML);
+});
+app.use(express.static(PUBLIC_DIR, {
+  setHeaders(res, file) {
+    // Versioned assets can be cached long; the service worker never.
+    if (file.endsWith('sw.js')) res.set('Cache-Control', 'no-cache');
+  },
+}));
 app.use(auth.sessionMiddleware(store));
 const asPlayer = auth.requireRole('jogador');
 
