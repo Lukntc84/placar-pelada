@@ -92,7 +92,7 @@ test('winner stays: next waiting team enters, losers go to the queue', async () 
   const s = await req('GET', '/api/state');
   assert.deepEqual(s.queue, []);
   assert.equal(s.teams.length, 1);
-  assert.deepEqual(s.teams[0].players, [ids.Ana, ids.Beto]);
+  assert.deepEqual([...s.teams[0].players].sort(), [ids.Ana, ids.Beto].sort()); // order is drawn
 });
 
 test('queue closes a team of 6 automatically with one goalkeeper', async () => {

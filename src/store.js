@@ -26,6 +26,7 @@ function empty() {
     rsvp: { date: null, open: false, yes: [], no: [] }, // confirmation by link
     users: [], // accounts (phone + password hash + role)
     sessions: {}, // sha256(token) -> { userId, createdAt }
+    bench: {}, // playerId -> times left out as loose player after losing (rotation)
     gkDuty: {}, // playerId -> times in goal while waiting (guest goalkeeper rotation)
     idem: {},
   };

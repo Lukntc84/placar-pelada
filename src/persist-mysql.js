@@ -63,7 +63,7 @@ const SCHEMA = [
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 ];
 
-const STATE_KEYS = ['rev', 'settings', 'queue', 'teams', 'attendance', 'gkDuty', 'rsvp', 'sessions', 'idem'];
+const STATE_KEYS = ['rev', 'settings', 'queue', 'teams', 'attendance', 'gkDuty', 'bench', 'rsvp', 'sessions', 'idem'];
 
 const liveScore = (m, t) => m.events.filter((e) => e.team === t && !e.removedAt).length;
 

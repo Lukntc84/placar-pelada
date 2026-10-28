@@ -582,6 +582,7 @@ app.post('/api/admin/reset', ...adminOnly, action((db, b) => {
   db.attendance = { date: null, present: [] };
   db.rsvp = { date: null, open: false, yes: [], no: [] };
   db.gkDuty = {};
+  db.bench = {};
   for (const u of db.users) u.playerId = null;
   return { backup };
 }));
@@ -689,6 +690,7 @@ app.post('/api/day/reset', ...write, action((db, b) => {
   db.queue = [];
   db.teams = [];
   db.gkDuty = {};
+  db.bench = {};
   return {};
 }));
 
@@ -1097,9 +1099,27 @@ app.post('/api/matches/:id/next', ...write, action((db, b, req) => {
   if (activeMatch(db)) throw new HttpError(409, 'MATCH_IN_PROGRESS', 'Já existe uma partida em andamento.');
   const leaving = decideLeaving(db, m, b.both ? null : b.leaving);
   const durationMin = b.durationMin ?? m.durationMin;
+  // Leaving players go to the end of the queue. Who goes first (and so gets
+  // picked to complete the next team) is a rotation: whoever was left out as
+  // a loose player more times goes first; ties are drawn, so the first time
+  // it is a plain draw.
+  db.bench ||= {};
+  const leavers = [];
   const toQueue = (ids, keep = []) => {
-    for (const id of ids) {
-      if (getPlayer(db, id)?.active && !isWaiting(db, id) && !keep.includes(id)) db.queue.push(id);
+    const eligible = ids.filter((id) => getPlayer(db, id)?.active && !isWaiting(db, id) && !keep.includes(id));
+    const ordered = eligible
+      .map((id) => ({ id, r: Math.random() }))
+      .sort((a, b) => (db.bench[b.id] || 0) - (db.bench[a.id] || 0) || a.r - b.r)
+      .map((x) => x.id);
+    db.queue.push(...ordered);
+    leavers.push(...ordered);
+  };
+  // After the new teams are formed: left out again -> more priority next time;
+  // made it into a team -> back to zero.
+  const settleBench = () => {
+    for (const id of leavers) {
+      if (db.queue.includes(id)) db.bench[id] = (db.bench[id] || 0) + 1;
+      else delete db.bench[id];
     }
   };
 
@@ -1112,6 +1132,7 @@ app.post('/api/matches/:id/next', ...write, action((db, b, req) => {
     const next = createMatch(db, stripTeam(first), stripTeam(second), durationMin);
     m.nextMatchId = next.id;
     autoForm(db);
+    settleBench();
     return { match: next, leaving: 'both' };
   }
 
@@ -1143,6 +1164,7 @@ app.post('/api/matches/:id/next', ...write, action((db, b, req) => {
   next.holdover = other(leaving); // remembers who won, for the tie rule
   m.nextMatchId = next.id;
   autoForm(db);
+  settleBench();
   return { match: next, leaving };
 }));
 

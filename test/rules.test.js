@@ -26,7 +26,8 @@ test('tie with 2 teams waiting: both leave, next two play', async () => {
     assert.deepEqual(r.match.teamA.players, [ids.P5, ids.P6]);
     assert.deepEqual(r.match.teamB.players, [ids.P7, ids.P8]);
     const s = await req('GET', '/api/state');
-    assert.deepEqual(s.teams.map((t) => t.players), [[ids.P1, ids.P2], [ids.P3, ids.P4]]);
+    // order inside each team is drawn; who forms which team follows the queue
+    assert.deepEqual(s.teams.map((t) => [...t.players].sort()), [[ids.P1, ids.P2].sort(), [ids.P3, ids.P4].sort()]);
   } finally { await stop(); }
 });
 
@@ -124,5 +125,37 @@ test('manual finish can be reopened until the next match is created', async () =
     await req('POST', `/api/matches/${m.id}/next`, { leaving: 'B' });
     const late = await req('POST', `/api/matches/${m.id}/reopen`);
     assert.equal(late.code, 'ALREADY_NEXT');
+  } finally { await stop(); }
+});
+
+test('leaving players: first time a draw, then rotation (whoever was left out goes in)', async () => {
+  const srv = await startServer();
+  const { req, stop } = srv;
+  try {
+    await req('PUT', '/api/settings', { teamSize: 3 }); // 2 line players + goalkeeper
+    const ids = await addPlayers(req, ['A1', 'A2', 'B1', 'B2', 'C1', 'C2', 'X1', 'X2']);
+    const open = async (teams, extras) => (await req('POST', '/api/matches', { teams, extras })).match;
+
+    // Round 1: B loses; X1 waits loose, so one of B joins X1 (draw), the other is left out.
+    let m = await open([{ players: [ids.A1, ids.A2] }, { players: [ids.B1, ids.B2] }, { players: [ids.C1, ids.C2] }], [ids.X1]);
+    await req('POST', `/api/matches/${m.id}/events`, { team: 'A', scorerId: ids.A1 });
+    await req('POST', `/api/matches/${m.id}/next`, {});
+    let s = await req('GET', '/api/state');
+    assert.equal(s.queue.length, 1);
+    const leftOut = s.queue[0];
+    assert.ok([ids.B1, ids.B2].includes(leftOut));
+    const pickedFirst = leftOut === ids.B1 ? ids.B2 : ids.B1;
+
+    // Round 2: the same two lose again (fresh setup). The one left out last
+    // time now goes first and is picked; the other is left out.
+    const cur = s.matches.find((x) => x.status !== 'finished');
+    await req('POST', `/api/matches/${cur.id}/finish`);
+    await req('DELETE', '/api/queue');
+    m = await open([{ players: [ids.A1, ids.A2] }, { players: [pickedFirst, leftOut] }, { players: [ids.C1, ids.C2] }], [ids.X2]);
+    await req('POST', `/api/matches/${m.id}/events`, { team: 'A', scorerId: ids.A1 });
+    await req('POST', `/api/matches/${m.id}/next`, {});
+    s = await req('GET', '/api/state');
+    assert.deepEqual(s.queue, [pickedFirst]);
+    assert.ok(s.teams.some((t) => t.players.includes(leftOut) && t.players.includes(ids.X2)));
   } finally { await stop(); }
 });
