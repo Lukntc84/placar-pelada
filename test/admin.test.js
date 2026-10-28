@@ -1,0 +1,184 @@
+'use strict';
+// Accounts and roles, confirmation by link, automatic backups and persistence.
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { startServer, addPlayers } = require('./helpers');
+
+test('accounts: login required, sign-up as jogador, roles enforced', async () => {
+  const { req, anon, login, stop } = await startServer();
+  try {
+    // Not logged in: no data.
+    assert.equal((await anon('GET', '/api/state')).status, 401);
+    assert.equal((await anon('POST', '/api/players', { name: 'X' })).status, 401);
+
+    // Admin creates players; Ana signs up linking herself to her player.
+    const ana = (await req('POST', '/api/players', { name: 'Ana' })).player.id;
+    const reg = await anon('POST', '/api/auth/register', { name: 'Ana Souza', phone: '(21) 98888-7777', password: 'segredo1', playerId: ana });
+    assert.equal(reg.ok, true, reg.error);
+    assert.equal(reg.user.role, 'jogador');
+    assert.equal(reg.user.playerId, ana);
+    assert.equal(reg.user.passwordHash, undefined);
+    assert.match(reg.cookie, /^pelada_sid=/);
+
+    // Same phone again (other format) is refused; weak password refused.
+    assert.equal((await anon('POST', '/api/auth/register', { name: 'Outra', phone: '5521988887777', password: 'abcdef' })).code, 'PHONE_EXISTS');
+    assert.equal((await anon('POST', '/api/auth/register', { name: 'Beto', phone: '21977776666', password: '123' })).status, 400);
+    // Player already linked to another account.
+    assert.equal((await anon('POST', '/api/auth/register', { name: 'Fake', phone: '21900001111', password: 'abcdef', playerId: ana })).code, 'PLAYER_TAKEN');
+
+    // Jogador can read, cannot run the game or change rules.
+    const asAna = await login('21988887777', 'segredo1');
+    assert.equal((await asAna('GET', '/api/state')).status, 200);
+    assert.equal((await asAna('POST', '/api/players', { name: 'Z' })).status, 403);
+    assert.equal((await asAna('PUT', '/api/settings', { goalLimit: 3 })).status, 403);
+    assert.equal((await asAna('GET', '/api/backups')).status, 403);
+    assert.equal((await asAna('GET', '/api/users')).status, 403);
+
+    // Admin promotes Ana to organizador: she can run the game, not the rules.
+    const users = (await req('GET', '/api/users')).users;
+    const anaUser = users.find((u) => u.name === 'Ana Souza');
+    assert.equal(users[0].role, 'admin');
+    assert.equal((await req('PUT', `/api/users/${anaUser.id}`, { role: 'organizador' })).ok, true);
+    assert.equal((await asAna('POST', '/api/players', { name: 'Caio' })).ok, true);
+    assert.equal((await asAna('PUT', '/api/settings', { goalLimit: 3 })).status, 403);
+    // Nobody else can become admin; the admin account cannot be demoted.
+    assert.equal((await req('PUT', `/api/users/${anaUser.id}`, { role: 'admin' })).status, 400);
+    assert.equal((await req('PUT', `/api/users/${users[0].id}`, { role: 'jogador' })).status, 403);
+
+    // Goals are signed with the account name, not a client-provided one.
+    const caio = (await req('GET', '/api/state')).players.find((p) => p.name === 'Caio').id;
+    const m = await asAna('POST', '/api/matches', { teams: [{ players: [ana] }, { players: [caio] }] });
+    const g = await asAna('POST', `/api/matches/${m.match.id}/events`, { team: 'A', scorerId: ana, deviceName: 'Mentira' });
+    assert.equal(g.event.deviceName, 'Ana Souza');
+
+    // Wrong password: generic message, throttled after 5 tries.
+    const bad = await anon('POST', '/api/auth/login', { phone: '21988887777', password: 'errada' });
+    assert.equal(bad.code, 'BAD_LOGIN');
+    for (let i = 0; i < 5; i++) await anon('POST', '/api/auth/login', { phone: '21988887777', password: 'errada' });
+    assert.equal((await anon('POST', '/api/auth/login', { phone: '21988887777', password: 'segredo1' })).status, 429);
+
+    // Deactivated account loses access immediately.
+    await req('PUT', `/api/users/${anaUser.id}`, { active: false });
+    assert.equal((await asAna('GET', '/api/state')).status, 401);
+  } finally { await stop(); }
+});
+
+test('accounts: logout, change password, admin reset, sign-up creating own player', async () => {
+  const { req, anon, login, stop } = await startServer();
+  try {
+    const reg = await anon('POST', '/api/auth/register', { name: 'Duda', phone: '31955554444', password: 'primeira', newPlayer: true, position: 'GOL' });
+    assert.equal(reg.ok, true, reg.error);
+    const s = await req('GET', '/api/state');
+    const duda = s.players.find((p) => p.id === reg.user.playerId);
+    assert.equal(duda.name, 'Duda');
+    assert.equal(duda.position, 'GOL');
+
+    const asDuda = await login('31955554444', 'primeira');
+    assert.equal((await asDuda('POST', '/api/auth/password', { current: 'errada', next: 'segunda1' })).code, 'BAD_LOGIN');
+    assert.equal((await asDuda('POST', '/api/auth/password', { current: 'primeira', next: 'segunda1' })).ok, true);
+    assert.equal((await asDuda('GET', '/api/state')).status, 401); // old session revoked
+    const again = await login('31955554444', 'segunda1');
+    assert.equal((await again('GET', '/api/auth/me')).user.name, 'Duda');
+    await again('POST', '/api/auth/logout');
+    assert.equal((await again('GET', '/api/state')).status, 401);
+
+    const id = (await req('GET', '/api/users')).users.find((u) => u.name === 'Duda').id;
+    assert.equal((await req('POST', `/api/users/${id}/password`, { password: 'temporaria' })).ok, true);
+    await login('31955554444', 'temporaria');
+  } finally { await stop(); }
+});
+
+test('admin account comes from env and can be reset', async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pelada-admin-'));
+  try {
+    let srv = await startServer({ ADMIN_PHONE: '11911112222', ADMIN_PASSWORD: 'primeira1' }, { dataDir });
+    await srv.login('11911112222', 'primeira1');
+    await new Promise((r) => setTimeout(r, 300));
+    await srv.stop({ keep: true });
+
+    // A new env password is ignored unless ADMIN_RESET_PASSWORD=1.
+    srv = await startServer({ ADMIN_PHONE: '11911112222', ADMIN_PASSWORD: 'outra123' }, { dataDir });
+    await assert.rejects(srv.login('11911112222', 'outra123'));
+    await srv.login('11911112222', 'primeira1');
+    await srv.stop({ keep: true });
+
+    srv = await startServer({ ADMIN_PHONE: '11911112222', ADMIN_PASSWORD: 'outra123', ADMIN_RESET_PASSWORD: '1' }, { dataDir });
+    await new Promise((r) => setTimeout(r, 200));
+    await srv.login('11911112222', 'outra123');
+    await srv.stop({ keep: true });
+  } finally {
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+test('RSVP: each player confirms only for themselves, only while open', async () => {
+  const { req, anon, login, stop } = await startServer();
+  try {
+    const ana = (await req('POST', '/api/players', { name: 'Ana' })).player.id;
+    const beto = (await req('POST', '/api/players', { name: 'Beto' })).player.id;
+    await anon('POST', '/api/auth/register', { name: 'Ana', phone: '41911110000', password: 'abcdef', playerId: ana });
+    await anon('POST', '/api/auth/register', { name: 'Beto', phone: '41922220000', password: 'abcdef', playerId: beto });
+    const asAna = await login('41911110000', 'abcdef');
+    const asBeto = await login('41922220000', 'abcdef');
+
+    assert.equal((await asAna('POST', '/api/rsvp/answer', { going: true })).code, 'CLOSED');
+    assert.equal((await asAna('POST', '/api/rsvp/open', { date: '2026-11-01' })).status, 403);
+    assert.equal((await req('POST', '/api/rsvp/open', { date: '2026-11-01' })).ok, true);
+
+    await asAna('POST', '/api/rsvp/answer', { going: true });
+    await asAna('POST', '/api/rsvp/answer', { going: true }); // twice = once
+    await asBeto('POST', '/api/rsvp/answer', { going: false });
+    assert.equal((await asAna('POST', '/api/rsvp/answer', { playerId: beto, going: true })).status, 403);
+    let r = await asAna('GET', '/api/rsvp');
+    assert.deepEqual(r.yes, [ana]);
+    assert.deepEqual(r.no, [beto]);
+
+    await asBeto('POST', '/api/rsvp/answer', { going: true }); // changed mind
+    r = await req('GET', '/api/rsvp');
+    assert.deepEqual(r.yes, [ana, beto]);
+    assert.deepEqual(r.no, []);
+
+    await req('POST', '/api/rsvp/close', {});
+    assert.equal((await asAna('POST', '/api/rsvp/answer', { going: false })).code, 'CLOSED');
+  } finally { await stop(); }
+});
+
+test('daily backup file is created and listed; data survives a restart', async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pelada-persist-'));
+  try {
+    let srv = await startServer({}, { dataDir });
+    const ids = await addPlayers(srv.req, ['Ana', 'Beto']);
+    const m = await srv.req('POST', '/api/matches', { teams: [{ players: [ids.Ana] }, { players: [ids.Beto] }] });
+    await srv.req('POST', `/api/matches/${m.match.id}/events`, { team: 'A', scorerId: ids.Ana });
+
+    const run = await srv.req('POST', '/api/backups/run', {});
+    assert.equal(run.ok, true);
+    assert.match(run.name, /^pelada-\d{4}-\d{2}-\d{2}\.json$/);
+    const list = await srv.req('GET', '/api/backups');
+    assert.equal(list.backups.length, 1);
+    const file = await srv.req('GET', `/api/backups/${run.name}`);
+    assert.equal(file.players.length, 2);
+    assert.equal(file.sessions, undefined); // sessions never go to backups
+    const evil = await srv.req('GET', '/api/backups/..%2Fdb.json');
+    assert.equal(evil.status, 404);
+
+    // Restoring a backup keeps the accounts.
+    const restored = await srv.req('POST', '/api/restore', { ...file, players: [file.players[0]] });
+    assert.equal(restored.ok, true);
+    assert.equal((await srv.req('GET', '/api/state')).players.length, 1);
+
+    await new Promise((r) => setTimeout(r, 300)); // let the background save finish
+    await srv.stop({ keep: true });
+
+    srv = await startServer({}, { dataDir });
+    const s = await srv.req('GET', '/api/state');
+    assert.equal(s.players.length, 1);
+    assert.equal(s.matches[0].events.length, 1);
+    await srv.stop({ keep: true });
+  } finally {
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }
+});

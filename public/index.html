@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0c3b2e">
+  <title>Placar da Pelada</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚽</text></svg>">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div id="auth" class="auth" hidden>
+    <div class="auth-box">
+      <div class="auth-logo"><img src="/icon-192.png" alt="" width="72" height="72"><h1>Placar da Pelada</h1></div>
+      <div class="auth-tabs" role="tablist">
+        <button type="button" data-auth="login" class="on" role="tab">Entrar</button>
+        <button type="button" data-auth="register" role="tab">Criar conta</button>
+      </div>
+
+      <form id="loginForm" autocomplete="on" novalidate>
+        <label>Celular<input name="phone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="(11) 98765-4321" required></label>
+        <label>Senha
+          <span class="pwd"><input name="password" type="password" autocomplete="current-password" required>
+          <button type="button" class="ghost small" data-showpwd>mostrar</button></span>
+        </label>
+        <button type="submit" class="primary big">Entrar</button>
+        <p class="muted center">Esqueceu a senha? Peça ao administrador para criar uma nova.</p>
+      </form>
+
+      <form id="registerForm" autocomplete="on" novalidate hidden>
+        <label>Seu nome<input name="name" maxlength="40" autocomplete="name" placeholder="Como te chamam na pelada" required></label>
+        <label>Celular<input name="phone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="(11) 98765-4321" required></label>
+        <label>Crie uma senha <small>(mínimo 6 caracteres)</small>
+          <span class="pwd"><input name="password" type="password" autocomplete="new-password" minlength="6" required>
+          <button type="button" class="ghost small" data-showpwd>mostrar</button></span>
+        </label>
+        <button type="submit" class="primary big">Criar conta</button>
+        <p class="muted center">Depois você escolhe seu nome na lista de jogadores.</p>
+      </form>
+
+      <p id="authError" class="auth-error" role="alert"></p>
+    </div>
+  </div>
+
+  <header class="top">
+    <div class="brand">⚽ Placar da Pelada</div>
+    <div class="top-actions">
+      <button id="btnMe" class="chip" data-act="go" data-tab="settings" title="Minha conta"></button>
+      <span id="conn" class="conn" title="Conexão em tempo real"></span>
+    </div>
+  </header>
+  <div id="banner" class="banner" hidden></div>
+
+  <main>
+    <!-- PARTIDA -->
+    <section id="view-match" class="view"></section>
+
+    <!-- TIMES -->
+    <section id="view-teams" class="view">
+      <div class="card">
+        <h2>Confirmação por link</h2>
+        <p class="muted">Abra a lista para o dia do jogo e mande o link no grupo. Cada um marca "vou" ou "não vou" no próprio celular.</p>
+        <div class="rsvp-open">
+          <input id="rsvpDate" type="date" aria-label="Data do jogo">
+          <button class="small" data-act="rsvpOpen">Abrir lista</button>
+        </div>
+        <div id="rsvpBox"></div>
+      </div>
+
+      <div class="card">
+        <div class="row-between">
+          <h2>1. Presença de hoje</h2>
+          <button class="ghost small" data-act="newDay">Novo dia</button>
+        </div>
+        <div id="dayBanner"></div>
+        <p id="presenceSummary" class="muted"></p>
+        <input id="presenceSearch" type="search" placeholder="Buscar jogador…" autocomplete="off">
+        <div class="row-btns">
+          <button class="small" data-act="presenceAll">Marcar todos</button>
+          <button class="small ghost" data-act="presenceNone">Desmarcar todos</button>
+        </div>
+        <div id="presenceList" class="presence"></div>
+      </div>
+
+      <div class="card">
+        <h2>2. Sortear times</h2>
+        <p class="muted">Usa só quem está presente. Os 2 primeiros times jogam, os outros ficam de próximo e quem sobrar fica avulso.</p>
+        <div class="form-grid">
+          <label>Quantidade de times
+            <select id="teamCount"></select>
+          </label>
+          <label>Duração da partida (min)
+            <input id="duration" type="number" min="1" max="120" inputmode="numeric">
+          </label>
+        </div>
+        <div id="teamNames" class="team-names"></div>
+        <div class="row-btns">
+          <button data-act="balance" class="primary">Sortear com os presentes</button>
+          <button data-act="clearSel" class="ghost">Limpar</button>
+        </div>
+      </div>
+      <div id="builderPreview" class="teams-grid multi"></div>
+      <div class="card">
+        <h3>Ajuste manual <small class="muted">toque no jogador para trocar de time</small></h3>
+        <div id="builderPool" class="pool"></div>
+      </div>
+      <button data-act="createMatch" class="primary big">Criar partida</button>
+    </section>
+
+    <!-- PRÓXIMOS -->
+    <section id="view-queue" class="view"><div id="queueBox"></div></section>
+
+    <!-- JOGADORES -->
+    <section id="view-players" class="view">
+      <form id="playerForm" class="card" autocomplete="off">
+        <h2 id="playerFormTitle">Cadastrar jogador</h2>
+        <div class="form-grid">
+          <label>Nome<input name="name" maxlength="40" required></label>
+          <label>Apelido<input name="nickname" maxlength="20"></label>
+          <label>Posição
+            <select name="position">
+              <option value="">—</option>
+              <option value="GOL">Goleiro</option>
+              <option value="ZAG">Zagueiro</option>
+              <option value="LAT">Lateral</option>
+              <option value="MEI">Meio-campo</option>
+              <option value="ATA">Atacante</option>
+            </select>
+          </label>
+          <label>Nível (1–5)
+            <select name="rating">
+              <option value="1">1 ★</option><option value="2">2 ★★</option>
+              <option value="3" selected>3 ★★★</option>
+              <option value="4">4 ★★★★</option><option value="5">5 ★★★★★</option>
+            </select>
+          </label>
+        </div>
+        <div class="row-btns">
+          <button type="submit" class="primary" id="playerSubmit">Cadastrar</button>
+          <button type="button" class="ghost" id="playerCancel" hidden>Cancelar</button>
+        </div>
+      </form>
+      <div id="playerList"></div>
+
+    </section>
+
+    <!-- AJUSTES -->
+    <section id="view-settings" class="view">
+      <div class="card">
+        <h2>👤 Minha conta</h2>
+        <div id="setAccount"></div>
+      </div>
+
+      <div id="rulesSummary" class="card summary-card"></div>
+
+      <div class="card">
+        <h2>⏱️ Partida</h2>
+        <div id="setMatch"></div>
+      </div>
+
+      <div class="card">
+        <h2>🤝 Empate</h2>
+        <p class="muted">O que acontece quando a partida termina empatada.</p>
+        <div id="setTie" class="choice-list"></div>
+      </div>
+
+      <div class="card">
+        <h2>🎲 Sorteio</h2>
+        <div id="setDraw"></div>
+      </div>
+
+      <div class="card admin-only">
+        <h2>👥 Contas</h2>
+        <p class="muted">Quem se cadastra entra como <b>Jogador</b> (acompanha e confirma presença). Promova a <b>Organizador</b> quem cuida da mesa: registra gols, monta times e marca presença.</p>
+        <div id="setUsers"><p class="muted">Carregando…</p></div>
+      </div>
+
+      <div class="card admin-only">
+        <h2>💾 Backups</h2>
+        <p class="muted">O servidor guarda sozinho uma cópia de tudo por dia (últimos 7 dias). De vez em quando, baixe uma cópia e guarde no celular ou no Drive: se o servidor tiver problema, ela salva o histórico.</p>
+        <div class="row-btns">
+          <button class="primary" data-act="backup">⬇️ Baixar cópia agora</button>
+        </div>
+        <h3 class="sub-title">Cópias automáticas do servidor</h3>
+        <div id="backupList"><p class="muted">Carregando…</p></div>
+        <details class="danger-zone">
+          <summary>Restaurar uma cópia</summary>
+          <p>Troca <b>todos</b> os dados atuais pelos do arquivo escolhido. Use só se perdeu dados.</p>
+          <label class="button danger">Escolher arquivo de backup…<input id="restoreFile" type="file" accept="application/json,.json" hidden></label>
+        </details>
+      </div>
+
+    </section>
+
+    <!-- ESTATÍSTICAS -->
+    <section id="view-stats" class="view">
+      <div class="card row-between">
+        <h2>Artilharia</h2>
+        <select id="statsRange">
+          <option value="today">Hoje</option>
+          <option value="7">Últimos 7 dias</option>
+          <option value="30">Últimos 30 dias</option>
+          <option value="all">Tudo</option>
+        </select>
+      </div>
+      <div id="statsBox"></div>
+    </section>
+  </main>
+
+  <nav class="tabs">
+    <button data-tab="match"><span class="ico">⏱️</span><span>Partida</span></button>
+    <button data-tab="teams"><span class="ico">📅</span><span>Hoje</span></button>
+    <button data-tab="queue"><span class="ico">📋</span><span>Próximos</span></button>
+    <button data-tab="players"><span class="ico">👤</span><span>Jogadores</span></button>
+    <button data-tab="stats"><span class="ico">📊</span><span>Stats</span></button>
+    <button data-tab="settings"><span class="ico">⚙️</span><span>Ajustes</span></button>
+  </nav>
+
+  <div id="modal" class="modal" hidden>
+    <div class="modal-box" role="dialog" aria-modal="true"><div id="modalBody"></div></div>
+  </div>
+  <div id="toast" class="toast" role="status"></div>
+  <div id="bigboard" class="bigboard" hidden></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

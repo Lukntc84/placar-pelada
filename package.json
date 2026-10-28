@@ -1,0 +1,19 @@
+{
+  "name": "placar-pelada",
+  "version": "1.0.0",
+  "description": "Placar de futebol amador: jogadores, times, fila de próximos, gols, assistências e cronômetro em tempo real.",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18.17"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "mysql2": "^3.24.6"
+  }
+}
