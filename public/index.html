@@ -192,7 +192,21 @@
       </div>
 
       <div class="card admin-only">
-        <h2>💾 Backups</h2>
+        <h2>Testes e lançamento</h2>
+        <p class="muted">Crie jogadores fictícios para testar o app. Antes de lançar, apague os testes ou zere tudo. Uma cópia de segurança é salva antes de apagar.</p>
+        <div class="row-btns">
+          <button class="small" data-act="seedDemo">Criar 20 jogadores fictícios</button>
+          <button class="small ghost" data-act="resetData" data-scope="demo">Apagar só os fictícios</button>
+        </div>
+        <details class="danger-zone">
+          <summary>Zerar para o lançamento</summary>
+          <p>Apaga <b>todos</b> os jogadores, partidas, estatísticas, fila, presença e confirmações. As contas e as regras continuam.</p>
+          <button class="small danger" data-act="resetData" data-scope="all">Zerar todos os dados de jogo</button>
+        </details>
+      </div>
+
+      <div class="card admin-only">
+        <h2>Backups</h2>
         <p class="muted">O servidor guarda sozinho uma cópia de tudo por dia (últimos 7 dias). De vez em quando, baixe uma cópia e guarde no celular ou no Drive: se o servidor tiver problema, ela salva o histórico.</p>
         <div class="row-btns">
           <button class="primary" data-act="backup">⬇️ Baixar cópia agora</button>

@@ -508,6 +508,67 @@ async function ensureAdmin() {
 
 // ------------------------------------------------------------- settings
 
+// --------------------------------------------- test data and launch reset
+
+const DEMO_NAMES = [
+  ['Carlos Silva', 'GOL'], ['Marcelo Souza', 'GOL'], ['Paulo Lima', 'GOL'],
+  ['Rafael Costa', 'ATA'], ['Bruno Alves', 'MEI'], ['Diego Rocha', 'ZAG'], ['Thiago Melo', 'ATA'],
+  ['Pedro Gomes', 'MEI'], ['Lucas Pereira', 'LAT'], ['Felipe Barros', 'ATA'], ['João Ribeiro', 'ZAG'],
+  ['Vinícius Dias', 'MEI'], ['Leandro Nunes', 'ATA'], ['Caio Martins', 'ZAG'], ['André Castro', 'MEI'],
+  ['Igor Freitas', 'ATA'], ['Hugo Teixeira', 'LAT'], ['Nicolas Araújo', 'MEI'], ['Samuel Pinto', 'ZAG'],
+  ['Otávio Cardoso', 'ATA'], ['Renan Moreira', 'MEI'], ['Gustavo Ramos', 'ATA'], ['Henrique Lopes', 'ZAG'],
+  ['Matheus Cunha', 'MEI'], ['Fábio Correia', 'LAT'], ['Rodrigo Vieira', 'ATA'], ['Eduardo Moura', 'MEI'],
+  ['Daniel Farias', 'ZAG'], ['Ricardo Batista', 'ATA'], ['Alexandre Reis', 'MEI'],
+];
+
+// Creates fictitious players (marked demo) to try the app before launch.
+app.post('/api/admin/seed', ...adminOnly, action((db, b) => {
+  const count = cleanInt(b.count, 1, DEMO_NAMES.length, 20);
+  const added = [];
+  for (const [name, position] of DEMO_NAMES) {
+    if (added.length >= count) break;
+    if (db.players.some((p) => p.active && p.name.toLowerCase() === name.toLowerCase())) continue;
+    const player = {
+      id: uid(), name: `${name} (teste)`, nickname: name.split(' ')[0], position,
+      rating: 1 + Math.floor(Math.random() * 5), active: true, createdAt: Date.now(), demo: true,
+    };
+    db.players.push(player);
+    added.push(player.id);
+  }
+  return { added: added.length };
+}));
+
+// Wipes game data for launch: players, matches, queue, presence and
+// confirmations. Accounts and rules stay. A safety copy is saved first.
+app.post('/api/admin/reset', ...adminOnly, action((db, b) => {
+  if (b.confirm !== 'ZERAR') throw bad('Para confirmar, digite ZERAR.');
+  if (b.scope !== 'all' && b.scope !== 'demo') throw bad('Escolha o que apagar.');
+  const backup = backups.saveCopy(b.scope === 'all' ? 'antes-de-zerar' : 'antes-de-limpar-testes');
+  if (b.scope === 'demo') {
+    // demo flag, or the "(teste)" suffix (the MySQL table keeps only fixed columns)
+    const demo = new Set(db.players.filter((p) => p.demo || / \(teste\)$/.test(p.name)).map((p) => p.id));
+    const touches = (m) => [...m.teamA.players, ...m.teamB.players, m.teamA.gk, m.teamB.gk].some((id) => demo.has(id));
+    db.matches = db.matches.filter((m) => !touches(m));
+    db.players = db.players.filter((p) => !demo.has(p.id));
+    db.queue = db.queue.filter((id) => !demo.has(id));
+    db.teams = db.teams.map((t) => ({ ...t, players: t.players.filter((id) => !demo.has(id)) })).filter((t) => t.players.length);
+    db.attendance.present = db.attendance.present.filter((id) => !demo.has(id));
+    db.rsvp.yes = db.rsvp.yes.filter((id) => !demo.has(id));
+    db.rsvp.no = db.rsvp.no.filter((id) => !demo.has(id));
+    for (const u of db.users) if (demo.has(u.playerId)) u.playerId = null;
+    return { backup, removed: demo.size };
+  }
+  db.players = [];
+  db.matches = [];
+  db.queue = [];
+  db.teams = [];
+  db.attendance = { date: null, present: [] };
+  db.rsvp = { date: null, open: false, yes: [], no: [] };
+  db.gkDuty = {};
+  for (const u of db.users) u.playerId = null;
+  return { backup };
+}));
+
 app.put('/api/settings', ...adminOnly, action((db, b) => {
   db.settings.teamSize = cleanInt(b.teamSize, 1, 11, db.settings.teamSize);
   db.settings.durationMin = cleanInt(b.durationMin, 1, 120, db.settings.durationMin);

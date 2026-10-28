@@ -188,3 +188,39 @@ test('daily backup file is created and listed; data survives a restart', async (
     fs.rmSync(dataDir, { recursive: true, force: true });
   }
 });
+
+test('admin: seed fictitious players, remove only them, then reset for launch', async () => {
+  const { req, anon, login, stop } = await startServer();
+  try {
+    const real = (await req('POST', '/api/players', { name: 'Real Player' })).player.id;
+    const seed = await req('POST', '/api/admin/seed', { count: 12 });
+    assert.equal(seed.added, 12);
+    let s = await req('GET', '/api/state');
+    assert.equal(s.players.length, 13);
+    const demoIds = s.players.filter((p) => p.name.endsWith('(teste)')).map((p) => p.id);
+    await req('POST', '/api/matches', { teams: [{ players: [demoIds[0]] }, { players: [demoIds[1]] }] });
+    await req('POST', '/api/attendance', { playerIds: [real, demoIds[2]], present: true });
+
+    // Organizers cannot do this; a wrong confirmation is refused.
+    await anon('POST', '/api/auth/register', { name: 'Org', phone: '51911112222', password: 'abcdef' });
+    const asOrg = await login('51911112222', 'abcdef');
+    assert.equal((await asOrg('POST', '/api/admin/seed', {})).status, 403);
+    assert.equal((await req('POST', '/api/admin/reset', { scope: 'all', confirm: 'nao' })).status, 400);
+
+    const demo = await req('POST', '/api/admin/reset', { scope: 'demo', confirm: 'ZERAR' });
+    assert.equal(demo.removed, 12);
+    assert.match(demo.backup, /^pelada-antes-de-limpar-testes-/);
+    s = await req('GET', '/api/state');
+    assert.deepEqual(s.players.map((p) => p.id), [real]);
+    assert.equal(s.matches.length, 0);
+    assert.deepEqual(s.attendance.present, [real]);
+
+    const all = await req('POST', '/api/admin/reset', { scope: 'all', confirm: 'ZERAR' });
+    assert.match(all.backup, /^pelada-antes-de-zerar-/);
+    s = await req('GET', '/api/state');
+    assert.equal(s.players.length, 0);
+    assert.equal((await req('GET', '/api/users')).users.length, 2); // accounts kept
+    const list = (await req('GET', '/api/backups')).backups.map((b) => b.name);
+    assert.ok(list.includes(all.backup) && list.includes(demo.backup));
+  } finally { await stop(); }
+});

@@ -1681,6 +1681,24 @@ const actions = {
     const r = await act('POST', '/api/rsvp/answer', { playerId: d.player, going: null });
     if (r?.ok) toast(`${name} saiu da lista.`, 'ok');
   },
+  async seedDemo() {
+    const r = await act('POST', '/api/admin/seed', { count: 20 });
+    if (r?.ok) toast(r.added ? `${r.added} jogadores fictícios criados (com "(teste)" no nome).` : 'Os jogadores fictícios já existem.', 'ok');
+  },
+  async resetData(d) {
+    const all = d.scope === 'all';
+    const msg = all
+      ? 'Isso apaga TODOS os jogadores, partidas e estatísticas. As contas continuam.\n\nPara confirmar, digite ZERAR:'
+      : 'Apagar os jogadores fictícios e as partidas em que eles jogaram?\n\nPara confirmar, digite ZERAR:';
+    const typed = prompt(msg);
+    if (typed === null) return;
+    const r = await act('POST', '/api/admin/reset', { scope: d.scope, confirm: typed.trim().toUpperCase() });
+    if (r?.ok) {
+      builder.assign.clear();
+      toast(all ? 'Dados zerados. Pronto para o lançamento!' : `${r.removed} jogadores fictícios apagados.`, 'ok');
+      loadBackups();
+    }
+  },
   rsvpApply() {
     const ids = S.rsvp.yes.filter((id) => player(id)?.active && !isPresent(id));
     if (ids.length) setPresence(ids, true);

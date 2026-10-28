@@ -6,7 +6,8 @@ const path = require('path');
 
 const TZ = process.env.TZ_BACKUP || 'America/Sao_Paulo';
 const KEEP = Math.max(1, Number(process.env.BACKUP_KEEP) || 7);
-const NAME_RE = /^pelada-\d{4}-\d{2}-\d{2}\.json$/;
+const NAME_RE = /^pelada-\d{4}-\d{2}-\d{2}\.json$/; // daily files (rotated)
+const ANY_RE = /^pelada-[a-z0-9-]+\.json$/; // daily + safety copies
 
 function localDate(ts = Date.now()) {
   // en-CA formats as YYYY-MM-DD
@@ -24,14 +25,15 @@ module.exports = function createBackups(store) {
   function list() {
     if (!fs.existsSync(dir)) return [];
     return fs.readdirSync(dir)
-      .filter((f) => NAME_RE.test(f))
+      .filter((f) => ANY_RE.test(f))
       .sort()
       .reverse()
       .map((name) => ({ name, size: fs.statSync(path.join(dir, name)).size }));
   }
 
   function prune() {
-    for (const { name } of list().slice(KEEP)) fs.unlinkSync(path.join(dir, name));
+    const daily = list().filter((b) => NAME_RE.test(b.name));
+    for (const { name } of daily.slice(KEEP)) fs.unlinkSync(path.join(dir, name));
   }
 
   let lastRev = null;
@@ -62,8 +64,17 @@ module.exports = function createBackups(store) {
   }
 
   function filePath(name) {
-    return NAME_RE.test(name) ? path.join(dir, name) : null;
+    return ANY_RE.test(name) ? path.join(dir, name) : null;
   }
 
-  return { dir, list, run, start, filePath, snapshot };
+  // A one-off copy that the daily rotation never overwrites or deletes.
+  function saveCopy(label) {
+    fs.mkdirSync(dir, { recursive: true });
+    const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
+    const name = `pelada-${label}-${stamp}.json`;
+    fs.writeFileSync(path.join(dir, name), JSON.stringify(snapshot(store.get())));
+    return name;
+  }
+
+  return { dir, list, run, start, filePath, snapshot, saveCopy };
 };
