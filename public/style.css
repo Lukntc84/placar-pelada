@@ -418,7 +418,7 @@ textarea.summary { min-height: 260px; }
 .switch span { width: 26px; height: 26px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .25); transition: transform .15s; }
 .switch.on { background: var(--accent); border-color: var(--accent); }
 .switch.on span { transform: translateX(24px); }
-.readonly .stepper button, .readonly .choice, .readonly .switch { pointer-events: none; opacity: .55; }
+.readonly .stepper button, .readonly .choice, .readonly .switch:not([data-act=toggleMyGk]) { pointer-events: none; opacity: .55; }
 .danger-zone { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
 .danger-zone summary { color: var(--danger); }
 .danger-zone p { font-size: .9rem; }
