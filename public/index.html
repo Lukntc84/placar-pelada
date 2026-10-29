@@ -260,14 +260,14 @@
 
     <!-- ESTATÍSTICAS -->
     <section id="view-stats" class="view">
-      <div class="card row-between">
-        <h2>Artilharia</h2>
-        <select id="statsRange">
-          <option value="today">Hoje</option>
-          <option value="7">Últimos 7 dias</option>
-          <option value="30">Últimos 30 dias</option>
-          <option value="all">Tudo</option>
-        </select>
+      <div class="card stats-head">
+        <h2>Estatísticas</h2>
+        <div id="statsRange" class="range-chips" role="group" aria-label="Período"></div>
+        <div id="statsCustom" class="range-custom" hidden>
+          <label>De<input id="statsFrom" type="date"></label>
+          <label>Até<input id="statsTo" type="date"></label>
+        </div>
+        <p id="statsRangeNote" class="range-note"></p>
       </div>
       <div id="statsBox"></div>
     </section>

@@ -377,7 +377,6 @@ table.stats { width: 100%; border-collapse: collapse; font-variant-numeric: tabu
 .stats tr[data-act]:hover td { background: var(--surface-2); }
 .stats .link { color: var(--ink); }
 .tip { margin: 8px 0 0; font-size: .8rem; }
-#statsRange { width: auto; min-height: 40px; }
 .match-sum .ms-head { display: flex; justify-content: space-between; align-items: center; font-size: .82rem; }
 .ms-score { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px; margin: 8px 0; }
 .ms-score b { font-family: var(--font-display); font-size: 1.8rem; white-space: nowrap; }
@@ -593,3 +592,50 @@ body.logged-out .top, body.logged-out main, body.logged-out .tabs, body.logged-o
 .gk-choice small { color: var(--muted); font-size: .9rem; }
 .auth-switch { display: flex; flex-direction: column; gap: 8px; align-items: stretch; text-align: center; margin-top: 8px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); }
 .auth-switch .big { min-height: 54px; font-weight: 700; font-size: 1.05rem; }
+
+/* ---------------------------------------------------- stats panel */
+.stats-head h2 { margin-bottom: 10px; }
+.range-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { min-height: 44px; padding: 6px 14px; border-radius: 999px; font-size: .95rem; font-weight: 600; }
+.chip.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+.range-custom { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+.range-note { margin: 10px 0 0; font-size: .95rem; color: var(--muted); }
+.kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; text-align: center; }
+.kpis.kpis-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.kpis div { display: flex; flex-direction: column; gap: 2px; background: var(--surface-2); border-radius: 12px; padding: 12px 4px; }
+.kpis b { font-family: var(--font-display); font-size: 2.2rem; line-height: 1; font-variant-numeric: tabular-nums; }
+.kpis small { font-size: .85rem; color: var(--muted); font-weight: 600; }
+.my-card { border: 2px solid var(--accent); }
+.my-card .kpis div { background: var(--accent-soft); }
+.my-card .kpis b { color: var(--accent-hover); }
+.my-streak { margin: 10px 0 0; font-weight: 700; color: var(--accent-hover); }
+.my-card .ghost.small { margin-top: 8px; }
+.seg { display: inline-flex; background: var(--surface-2); border-radius: 12px; padding: 3px; gap: 2px; }
+.seg button { border: 0; background: none; min-height: 40px; padding: 4px 10px; font-size: .9rem; font-weight: 600; color: var(--muted); border-radius: 9px; }
+.seg button.on { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+.hbars { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.hb { width: 100%; display: grid; grid-template-columns: minmax(0, 7.5rem) minmax(0, 1fr) 2.2rem; align-items: center; gap: 10px;
+  border: 0; background: none; padding: 6px 2px; min-height: 44px; text-align: left; font-weight: 500; }
+.hb:hover { background: var(--surface-2); }
+.hb-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hb-track { height: 14px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.hb-bar { display: block; height: 100%; background: var(--accent); border-radius: 0 4px 4px 0; }
+.hb-val { font-family: var(--font-display); font-size: 1.35rem; text-align: right; font-variant-numeric: tabular-nums; }
+.line-chart { width: 100%; height: auto; display: block; margin-top: 8px; overflow: visible; }
+.lc-grid { stroke: var(--line); stroke-width: 1; }
+.lc-axis { fill: var(--muted); font-size: 11px; font-family: var(--font); }
+.lc-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.lc-dot { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+.lc-hit { fill: transparent; cursor: pointer; }
+.lc-pt.on .lc-dot, .lc-pt:focus .lc-dot { r: 6.5; fill: var(--accent-hover); }
+.lc-pt:focus { outline: none; }
+.lc-caption { margin: 6px 0 0; font-size: .95rem; }
+@media (max-width: 380px) {
+  .kpis b { font-size: 1.8rem; }
+  .kpis.kpis-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hb { grid-template-columns: minmax(0, 6rem) minmax(0, 1fr) 2rem; }
+  .stats-head + * .row-between, .card > .row-between .seg { margin-top: 4px; }
+}
+@media (max-width: 380px) {
+  .range-custom { grid-template-columns: minmax(0, 1fr); }
+}

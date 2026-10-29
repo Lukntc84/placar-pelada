@@ -73,6 +73,9 @@ let tab = LS.get('tab', 'match');
 let busy = false;
 let editingPlayerId = null;
 let statsRange = LS.get('statsRange', 'today');
+let statsFrom = LS.get('statsFrom', '');
+let statsTo = LS.get('statsTo', '');
+let statsMetric = 'g';
 let alertedMatch = null;
 let autoCache = null; // automatic ratings, recomputed on each new state
 
@@ -1527,16 +1530,17 @@ function resetPlayerForm() {
 
 /* ------------------------------------------------------- estatísticas */
 
-// Per-player numbers for matches since a timestamp. Guest goalkeepers count
+// Per-player numbers for matches in [since, until). Guest goalkeepers count
 // as players of the side they defended.
-function computeStats(since) {
+function computeStats(since, until = Infinity) {
   const rows = new Map();
   const row = (id) => {
     if (!rows.has(id)) rows.set(id, { id, j: 0, v: 0, e: 0, d: 0, g: 0, a: 0, gc: 0, gkJ: 0, gkSof: 0 });
     return rows.get(id);
   };
   for (const m of S.matches) {
-    if ((m.finishedAt || m.createdAt) < since) continue;
+    const at = m.finishedAt || m.createdAt;
+    if (at < since || at >= until) continue;
     if (m.status === 'finished') {
       const sA = score(m, 'A'), sB = score(m, 'B');
       for (const t of ['A', 'B']) {
@@ -1629,10 +1633,10 @@ function profileModal(id) {
 
 // Text summary of the selected period, ready to paste in WhatsApp.
 function summaryText() {
-  const since = rangeStart();
-  const rows = computeStats(since);
-  const hist = finishedMatches().filter((m) => m.finishedAt >= since).reverse();
-  const label = { today: new Date().toLocaleDateString('pt-BR'), 7: 'últimos 7 dias', 30: 'últimos 30 dias', all: 'geral' }[statsRange];
+  const [since, until] = rangeBounds();
+  const rows = computeStats(since, until);
+  const hist = finishedMatches().filter((m) => m.finishedAt >= since && m.finishedAt < until).reverse();
+  const label = rangeLabel();
   const top = (key) => {
     const best = Math.max(0, ...rows.map((r) => r[key]));
     return best ? `${rows.filter((r) => r[key] === best).map((r) => pname(r.id)).join(', ')} (${best})` : '—';
@@ -1658,22 +1662,161 @@ function summaryText() {
   return lines.join('\n');
 }
 
-function rangeStart() {
-  if (statsRange === 'all') return 0;
-  if (statsRange === 'today') { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); }
-  return Date.now() - Number(statsRange) * 86400000;
+/* ------------------------------------------------- period filter */
+
+const RANGES = [['today', 'Hoje'], ['last', 'Última pelada'], ['30', '30 dias'], ['year', 'Este ano'], ['all', 'Tudo'], ['custom', 'Escolher datas']];
+if (!RANGES.some(([v]) => v === statsRange)) statsRange = 'today';
+const DAY = 86400000;
+const dayStart = (ymd) => { const [y, m, d] = ymd.split('-').map(Number); return new Date(y, m - 1, d).getTime(); };
+const ymdOf = (ts) => { const d = new Date(ts); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const dm = (ymd) => ymd.split('-').reverse().slice(0, 2).join('/');
+const dmy = (ymd) => ymd.split('-').reverse().join('/');
+// Days with at least one finished match, newest first.
+const peladaDays = () => [...new Set(finishedMatches().map((m) => ymdOf(m.finishedAt)))];
+
+function rangeBounds() {
+  const today0 = dayStart(today());
+  switch (statsRange) {
+    case 'today': return [today0, Infinity];
+    case 'last': { const d = peladaDays()[0]; return d ? [dayStart(d), dayStart(d) + DAY] : [today0, Infinity]; }
+    case '30': return [today0 - 29 * DAY, Infinity];
+    case 'year': return [new Date(new Date().getFullYear(), 0, 1).getTime(), Infinity];
+    case 'custom': return [statsFrom ? dayStart(statsFrom) : 0, statsTo ? dayStart(statsTo) + DAY : Infinity];
+    default: return [0, Infinity];
+  }
+}
+
+// Human label of the period, with the real dates.
+function rangeLabel() {
+  const t = today();
+  switch (statsRange) {
+    case 'today': return `hoje, ${dmy(t)}`;
+    case 'last': { const d = peladaDays()[0]; return d ? `pelada de ${dmy(d)}` : 'nenhuma pelada ainda'; }
+    case '30': return `${dm(ymdOf(dayStart(t) - 29 * DAY))} a ${dm(t)}`;
+    case 'year': return `ano de ${t.slice(0, 4)}`;
+    case 'custom':
+      if (statsFrom && statsTo) return statsFrom === statsTo ? dmy(statsFrom) : `${dmy(statsFrom)} a ${dmy(statsTo)}`;
+      if (statsFrom) return `desde ${dmy(statsFrom)}`;
+      if (statsTo) return `até ${dmy(statsTo)}`;
+      return 'escolha as datas';
+    default: return 'geral (tudo)';
+  }
+}
+
+function renderRange() {
+  $('#statsRange').innerHTML = RANGES.map(([v, label]) =>
+    `<button class="chip ${statsRange === v ? 'on' : ''}" data-act="range" data-v="${v}" aria-pressed="${statsRange === v}">${label}</button>`).join('');
+  $('#statsCustom').hidden = statsRange !== 'custom';
+  const from = $('#statsFrom'), to = $('#statsTo');
+  if (document.activeElement !== from) from.value = statsFrom;
+  if (document.activeElement !== to) to.value = statsTo;
+  from.max = today(); to.max = today();
+  $('#statsRangeNote').textContent = `Mostrando: ${rangeLabel()}`;
+}
+
+/* ---------------------------------------------------------- charts */
+
+// Top 5 as horizontal bars, value written next to each bar.
+function barsChart(rows, key) {
+  const top = rows.filter((r) => r[key] > 0)
+    .sort((x, y) => y[key] - x[key] || y.g - x.g || pname(x.id).localeCompare(pname(y.id)))
+    .slice(0, 5);
+  if (!top.length) return '<p class="muted">Ninguém marcou isso nesse período.</p>';
+  const max = top[0][key];
+  return `<ol class="hbars">${top.map((r) => `<li>
+      <button class="hb" data-act="profile" data-player="${r.id}" aria-label="${esc(pname(r.id))}: ${r[key]}">
+        <span class="hb-name">${esc(pname(r.id))}</span>
+        <span class="hb-track"><span class="hb-bar" style="width:${Math.max(4, Math.round((r[key] / max) * 100))}%"></span></span>
+        <b class="hb-val">${r[key]}</b>
+      </button></li>`).join('')}</ol>`;
+}
+
+// Goals per pelada day: one line, a dot per day, tap a dot for its numbers.
+function goalsLine(hist) {
+  const byDay = new Map();
+  for (const m of [...hist].reverse()) {
+    const d = ymdOf(m.finishedAt);
+    const cur = byDay.get(d) || { d, goals: 0, matches: 0 };
+    cur.goals += live(m).length;
+    cur.matches++;
+    byDay.set(d, cur);
+  }
+  const days = [...byDay.values()];
+  if (days.length < 2) {
+    return `<p class="muted">${days.length ? `Só 1 dia de pelada nesse período: ${days[0].goals} gols em ${plural(days[0].matches, 'partida', 'partidas')}.` : 'Nenhuma partida nesse período.'} Escolha um período maior para ver a evolução.</p>`;
+  }
+  const W = 320, H = 150, L = 28, R = 12, T = 18, B = 26;
+  const max = Math.max(...days.map((x) => x.goals), 1);
+  const x = (i) => L + (i * (W - L - R)) / (days.length - 1);
+  const y = (v) => T + (1 - v / max) * (H - T - B);
+  const pts = days.map((dd, i) => [x(i), y(dd.goals)]);
+  const last = days[days.length - 1];
+  const grid = [0, Math.round(max / 2), max].filter((v, i, a) => a.indexOf(v) === i);
+  return `<svg class="line-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Gols por dia de pelada, de ${dm(days[0].d)} a ${dm(last.d)}">
+      ${grid.map((v) => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="lc-grid"/><text x="${L - 6}" y="${y(v) + 4}" class="lc-axis" text-anchor="end">${v}</text>`).join('')}
+      <polyline points="${pts.map((pt) => pt.join(',')).join(' ')}" class="lc-line"/>
+      ${days.map((dd, i) => `<g class="lc-pt" data-act="dayPick" data-i="${i}" tabindex="0" role="button" aria-label="${dmy(dd.d)}: ${dd.goals} gols em ${plural(dd.matches, 'partida', 'partidas')}">
+        <circle cx="${pts[i][0]}" cy="${pts[i][1]}" r="16" class="lc-hit"/><circle cx="${pts[i][0]}" cy="${pts[i][1]}" r="4.5" class="lc-dot"/></g>`).join('')}
+      <text x="${x(0)}" y="${H - 6}" class="lc-axis" text-anchor="start">${dm(days[0].d)}</text>
+      <text x="${x(days.length - 1)}" y="${H - 6}" class="lc-axis" text-anchor="end">${dm(last.d)}</text>
+    </svg>
+    <p class="lc-caption" id="lcCaption" data-days='${esc(JSON.stringify(days))}'><b>${dmy(last.d)}</b>: ${plural(last.goals, 'gol', 'gols')} em ${plural(last.matches, 'partida', 'partidas')} <span class="muted">· toque num ponto para ver outro dia</span></p>`;
+}
+
+// The logged-in player's numbers in the period.
+function myCard(rows) {
+  if (!ME || !ME.playerId || !player(ME.playerId)) return '';
+  const r = rows.find((x) => x.id === ME.playerId);
+  const streak = playerProfile(ME.playerId).current;
+  if (!r || (!r.j && !r.g && !r.a)) {
+    return `<section class="card my-card"><h2>Minha temporada</h2><p class="muted">Você ainda não jogou nesse período.</p></section>`;
+  }
+  const pct = r.j ? Math.round((r.v / r.j) * 100) : 0;
+  return `<section class="card my-card">
+    <h2>Minha temporada</h2>
+    <div class="kpis kpis-4">
+      <div><b>${r.j}</b><small>${r.j === 1 ? 'jogo' : 'jogos'}</small></div>
+      <div><b>${r.g}</b><small>${r.g === 1 ? 'gol' : 'gols'}</small></div>
+      <div><b>${r.a}</b><small>${r.a === 1 ? 'passe' : 'passes'}</small></div>
+      <div><b>${pct}%</b><small>vitórias</small></div>
+    </div>
+    ${streak >= 2 ? `<p class="my-streak">${streak} vitórias seguidas</p>` : ''}
+    <button class="ghost small" data-act="profile" data-player="${ME.playerId}">Ver meu perfil completo</button>
+  </section>`;
 }
 
 function renderStats() {
-  $('#statsRange').value = statsRange;
-  const since = rangeStart();
-  const rows = computeStats(since);
+  renderRange();
+  const [since, until] = rangeBounds();
+  const rows = computeStats(since, until);
   const gks = rows.filter((r) => r.gkJ).sort((x, y) => x.gkSof / x.gkJ - y.gkSof / y.gkJ || y.gkJ - x.gkJ);
-  const hist = finishedMatches().filter((m) => m.finishedAt >= since);
+  const hist = finishedMatches().filter((m) => m.finishedAt >= since && m.finishedAt < until);
+  const goals = hist.reduce((n, m) => n + live(m).length, 0);
+  const metric = { g: 'Gols', a: 'Passes', v: 'Vitórias' };
   $('#statsBox').innerHTML = `
+    <section class="card">
+      <div class="kpis">
+        <div><b>${hist.length}</b><small>${hist.length === 1 ? 'partida' : 'partidas'}</small></div>
+        <div><b>${goals}</b><small>${goals === 1 ? 'gol' : 'gols'}</small></div>
+        <div><b>${hist.length ? (goals / hist.length).toFixed(1).replace('.', ',') : '0'}</b><small>gols por partida</small></div>
+      </div>
+    </section>
+    ${myCard(rows)}
+    <section class="card">
+      <div class="row-between"><h2>Destaques</h2>
+        <div class="seg" role="group" aria-label="Destaque por">${Object.entries(metric).map(([k, label]) =>
+          `<button class="${statsMetric === k ? 'on' : ''}" data-act="metric" data-v="${k}" aria-pressed="${statsMetric === k}">${label}</button>`).join('')}</div>
+      </div>
+      ${barsChart(rows, statsMetric)}
+    </section>
+    <section class="card">
+      <h2>Gols por dia de pelada</h2>
+      ${goalsLine(hist)}
+    </section>
     <div class="row-btns">
       <button class="primary" data-act="shareSummary">${ICON.share}Resumo para o WhatsApp</button>
     </div>
+    <h3 class="section-title">Tabela completa</h3>
     <div class="card table-wrap">
       ${rows.length ? `<table class="stats">
         <thead><tr><th>#</th><th class="l">Jogador</th><th title="Jogos">J</th><th title="Vitórias">V</th>
@@ -1947,6 +2090,19 @@ const actions = {
     leaveSel = d.side ? { match: d.match, side: d.side } : null;
     renderMatch();
   },
+  range(d) {
+    statsRange = d.v;
+    LS.set('statsRange', statsRange);
+    renderStats();
+    if (d.v === 'custom' && !statsFrom) $('#statsFrom').focus();
+  },
+  metric(d) { statsMetric = d.v; renderStats(); },
+  dayPick(d) {
+    const cap = $('#lcCaption');
+    const day = JSON.parse(cap.dataset.days)[Number(d.i)];
+    cap.innerHTML = `<b>${dmy(day.d)}</b>: ${plural(day.goals, 'gol', 'gols')} em ${plural(day.matches, 'partida', 'partidas')}`;
+    document.querySelectorAll('.lc-pt').forEach((g) => g.classList.toggle('on', g.dataset.i === d.i));
+  },
   toTop() { window.scrollTo({ top: 0, behavior: 'smooth' }); },
   teamCountStep(d) {
     const cur = TEAM_COUNTS.indexOf(builder.mode === 'auto' ? 'auto' : Number(builder.mode));
@@ -2208,9 +2364,15 @@ $('#restoreFile').addEventListener('change', async (e) => {
 
 $('#presenceSearch').addEventListener('input', () => renderPresence());
 $('#duration').addEventListener('input', (e) => { e.target.dataset.touched = '1'; });
-$('#statsRange').addEventListener('change', (e) => {
-  statsRange = e.target.value;
-  LS.set('statsRange', statsRange);
+// Custom period: "De" / "Até" dates (the other end may stay empty).
+document.addEventListener('change', (e) => {
+  if (e.target.id !== 'statsFrom' && e.target.id !== 'statsTo') return;
+  if (e.target.id === 'statsFrom') { statsFrom = e.target.value; LS.set('statsFrom', statsFrom); }
+  else { statsTo = e.target.value; LS.set('statsTo', statsTo); }
+  if (statsFrom && statsTo && statsFrom > statsTo) {
+    [statsFrom, statsTo] = [statsTo, statsFrom];
+    LS.set('statsFrom', statsFrom); LS.set('statsTo', statsTo);
+  }
   renderStats();
 });
 
