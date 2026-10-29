@@ -582,7 +582,7 @@ function nextPanel(m) {
   const name = (t) => esc(m[`team${t}`].name);
   const entering = S.teams[0]
     ? `entra <b>${esc(S.teams[0].name)}</b>${S.teams[0].players.filter((id) => !isGk(id)).length < S.settings.teamSize - 1 ? ' (completado com quem saiu)' : ''}`
-    : S.queue.length ? 'entra um time formado pelos avulsos + quem saiu' : 'entra um time formado com quem saiu';
+    : S.queue.length ? 'entra um time formado por quem está de próximo + quem saiu' : 'entra um time formado com quem saiu';
   let text;
   if (plan.leaving === 'both') {
     text = `Empate com 2 times de próximo: <b>saem os dois</b>. Entram <b>${esc(S.teams[0].name)}</b> × <b>${esc(S.teams[1].name)}</b>.`;
@@ -599,7 +599,7 @@ function nextPanel(m) {
     ${ended}
     <p>${name('A')} <b>${sA} × ${sB}</b> ${name('B')}.</p>
     <p>${text}</p>
-    <p class="muted">Quem sai vai para o fim da fila avulsa.</p>
+    <p class="muted">Quem sai vai para o fim da fila de próximo.</p>
     <div class="row-btns">
       ${plan.leaving ? `<button class="primary big" data-act="next">${ICON.play}Próxima partida</button>` : ''}
       <button class="${plan.leaving ? 'ghost small' : ''}" data-act="next" data-leaving="A">Sai ${name('A')}</button>
@@ -911,7 +911,7 @@ function renderPresence() {
   const playing = new Set(m ? [...m.teamA.players, ...m.teamB.players] : []);
   const where = new Map();
   S.teams.forEach((t) => t.players.forEach((id) => where.set(id, t.name)));
-  S.queue.forEach((id, i) => where.set(id, `avulso ${i + 1}º`));
+  S.queue.forEach((id, i) => where.set(id, `próximo ${i + 1}º`));
   playing.forEach((id) => where.set(id, 'em jogo'));
 
   const fmtDate = (d) => d.split('-').reverse().slice(0, 2).join('/');
@@ -926,7 +926,7 @@ function renderPresence() {
   const ls = S.settings.teamSize - 1;
   const full = Math.floor(line / ls);
   $('#presenceSummary').innerHTML = present.length
-    ? `<b>${present.length} presentes</b> · ${gks} goleiro(s) · ${line} de linha → ${full} time(s) de ${ls} na linha${line % ls ? ` + ${line % ls} avulso(s)` : ''}`
+    ? `<b>${present.length} presentes</b> · ${gks} goleiro(s) · ${line} de linha → ${full} time(s) de ${ls} na linha${line % ls ? ` + ${line % ls} de próximo` : ''}`
     : 'Toque nos jogadores que vieram hoje.';
 
   const q = ($('#presenceSearch').value || '').trim().toLowerCase();
@@ -969,7 +969,7 @@ async function setPresence(playerIds, present) {
   for (const id of playerIds) if (pendingPresence.get(id)?.token === token) pendingPresence.delete(id);
   if (!r.ok) { toast(r.error || 'Erro.', 'err'); return loadState(); }
   if (r.formed?.length) toast(`Time fechado: ${r.formed.join(', ')}!`, 'ok');
-  else if (r.queued?.length) toast(`${r.queued.map(pname).join(', ')} entrou na fila de avulsos.`, 'ok');
+  else if (r.queued?.length) toast(`${r.queued.map(pname).join(', ')} ficou de próximo.`, 'ok');
 }
 
 function renderBuilder() {
@@ -1013,7 +1013,7 @@ function renderBuilder() {
   const extras = [...builder.assign].filter(([, t]) => t === EXTRA).map(([id]) => id);
   if (extras.length) {
     cols.push(`<div class="team-col" style="--c:#94b5a3">
-      <div class="team-col-head"><span class="dot"></span>Fila avulsa<small>${extras.length} jogador(es)</small></div>
+      <div class="team-col-head"><span class="dot"></span>De próximo<small>${extras.length} jogador(es)</small></div>
       ${extras.map((id) => `<div class="prow">${esc(pname(id))}</div>`).join('')}
     </div>`);
   }
@@ -1096,14 +1096,14 @@ function renderQueue() {
       ${edit && !m && S.teams.length >= 2 ? `<button class="primary big" data-act="startFromTeams">${ICON.play}Começar: ${esc(S.teams[0].name)} × ${esc(S.teams[1].name)}</button>` : ''}
       ${onField}
       <section class="card">
-        <div class="row-between"><h2>Próximos</h2>
+        <div class="row-between"><h2>Times formados</h2>
           ${edit && (S.teams.length || S.queue.length) ? '<button class="ghost small danger-text" data-act="qclear">Limpar tudo</button>' : ''}</div>
-        ${teamCards || `<p class="muted">Nenhum time esperando. Quando ${lineNeeded} avulsos de linha se juntam, o time fecha sozinho.</p>`}
+        ${teamCards || `<p class="muted">Nenhum time formado esperando. Quando ${lineNeeded} jogadores de linha estão de próximo, o time fecha sozinho.</p>`}
       </section>
       <section class="card">
-        <div class="row-between"><h2>Avulsos</h2><small class="muted">${S.queue.length ? `faltam ${missing} para fechar um time` : `${lineNeeded} de linha fecham um time`}</small></div>
+        <div class="row-between"><h2>De próximo</h2><small class="muted">${S.queue.length ? `faltam ${missing} para fechar um time` : `${lineNeeded} de linha fecham um time`}</small></div>
         <div class="progress" aria-hidden="true"><span style="width:${pct}%"></span></div>
-        ${loose ? `<ol class="queue">${loose}</ol>` : '<p class="muted">Ninguém avulso.</p>'}
+        ${loose ? `<ol class="queue">${loose}</ol>` : '<p class="muted">Ninguém de próximo.</p>'}
       </section>
       ${edit ? `<details class="card">
         <summary>Chegou alguém? Pôr na fila</summary>
@@ -1430,7 +1430,7 @@ function gkModal(t) {
   const waiting = [...S.queue, ...S.teams.flatMap((x) => x.players)].filter((id) => !blocked.has(id));
   openModal(`
     <h3>Goleiro do ${esc(team.name)}</h3>
-    <p class="muted">De próximo (avulsos primeiro):</p>
+    <p class="muted">Quem está esperando (de próximo primeiro):</p>
     <div class="pick">${waiting.map((id) => btn(id, isGk(id) ? ` ${GK}` : '')).join('') || '<span class="muted">Ninguém esperando.</span>'}</div>
     <p class="muted">Do próprio time:</p>
     <div class="pick">${team.players.map((id) => btn(id)).join('')}</div>
@@ -1687,7 +1687,7 @@ const actions = {
   guestAdd() {
     openModal(`
       <h3>Adicionar convidado</h3>
-      <p class="muted">Para quem veio hoje sem conta no app. Ele já entra como presente${dayStartedClient() ? ' e vai para a fila de avulsos' : ''}.</p>
+      <p class="muted">Para quem veio hoje sem conta no app. Ele já entra como presente${dayStartedClient() ? ' e fica de próximo' : ''}.</p>
       <form id="guestForm" class="stack" autocomplete="off">
         <label>Nome<input name="name" maxlength="40" required></label>
         <div class="form-grid">
@@ -1714,7 +1714,7 @@ const actions = {
       });
       if (r?.ok) {
         closeModal();
-        toast(r.formed?.length ? `${r.player.name} chegou e fechou o ${r.formed.join(', ')}!` : r.queued?.length ? `${r.player.name} entrou na fila de avulsos.` : `${r.player.name} marcado como presente.`, 'ok');
+        toast(r.formed?.length ? `${r.player.name} chegou e fechou o ${r.formed.join(', ')}!` : r.queued?.length ? `${r.player.name} ficou de próximo.` : `${r.player.name} marcado como presente.`, 'ok');
       }
     });
   },
@@ -1756,11 +1756,11 @@ const actions = {
   teamMove(d) { act('POST', '/api/teams/move', { teamId: d.team, delta: Number(d.d) }); },
   teamDissolve(d) {
     const t = S.teams.find((x) => x.id === d.team);
-    if (t && confirm(`Desfazer ${t.name}? Os jogadores voltam para o fim da fila avulsa.`)) act('DELETE', `/api/teams/${t.id}`);
+    if (t && confirm(`Desfazer ${t.name}? Os jogadores voltam para o fim da fila de próximo.`)) act('DELETE', `/api/teams/${t.id}`);
   },
   qmove(d) { act('POST', '/api/queue/move', { playerId: d.player, delta: Number(d.d) }); },
   qremove(d) { if (confirm(`Tirar ${pname(d.player)} da fila de próximos?`)) act('DELETE', `/api/queue/${d.player}`); },
-  qclear() { if (confirm('Limpar todos os times de próximo e a fila avulsa?')) act('DELETE', '/api/queue'); },
+  qclear() { if (confirm('Limpar os times formados e a fila de próximo?')) act('DELETE', '/api/queue'); },
 
   // jogadores
   editPlayer(d) {

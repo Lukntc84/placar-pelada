@@ -5,17 +5,17 @@ App web em Node.js para futebol amador. Funciona no celular, pode ser instalado 
 ## Funcionalidades
 
 - **Contas (celular + senha)**: para usar o app é preciso entrar. No cadastro a pessoa informa a posição e o jogador dela já é criado com o nome da conta (se o organizador já tinha cadastrado alguém com o mesmo nome, a conta é ligada a ele).
-- **Convidados sem conta**: na aba Hoje, "+ Convidado" cria o jogador na hora e já marca presença (e põe na fila de avulsos se o dia já começou).
+- **Convidados sem conta**: na aba Hoje, "+ Convidado" cria o jogador na hora e já marca presença (e põe na fila de próximo se o dia já começou).
   - **Jogador**: acompanha placar e estatísticas ao vivo e confirma a própria presença.
   - **Organizador**: cuida da mesa (gols, cronômetro, times, presença, fila). Quem promove é o administrador.
   - **Administrador**: só você. Além de tudo acima, muda as regras, faz backups e gerencia as contas (promover, ligar ao jogador, criar nova senha, desativar).
 - **Jogadores**: cadastro com nome, apelido, posição e nível (1 a 5).
 - **Confirmação de presença**: o organizador abre a lista para a data do jogo e manda o link no grupo. Cada jogador entra na conta e toca em "Vou" ou "Não vou" na tela inicial; só dá para responder por si mesmo. Depois, um toque marca os confirmados como presentes.
-- **Presença do dia (aba Hoje)**: marque quem veio, com busca e "marcar todos". O resumo mostra quantos goleiros e jogadores de linha vieram e quantos times dá para formar. Quem chega depois que o dia começou entra direto na fila de avulsos. "Novo dia" limpa a presença, a fila e os times de próximo, mas mantém o histórico.
-- **Sorteio**: usa só os presentes. Monta times de 5 na linha mais um goleiro fixo, quando houver, e equilibra pelo nível (ou pelo nível automático). Os 2 primeiros times jogam, os outros ficam de próximo e quem sobrar fica avulso. Dá para ajustar tocando no jogador.
-- **Próximos**: times formados esperando e fila de avulsos por ordem de chegada. Quando 5 avulsos de linha se juntam, o app **fecha um time automaticamente**.
-- **Quem sai e completa o próximo time**: os avulsos se misturam com o primeiro time que perder. Dos jogadores que saem, entra primeiro quem ficou de fora como avulso mais vezes; no empate (e na primeira vez), sorteio. Ninguém fica sendo escolhido para sair toda hora.
-- **Goleiro de próximo**: time sem goleiro fixo joga com um avulso no gol, que não perde o lugar na fila. O app reveza quem vai pro gol. Gol, assistência, jogo e vitória contam para ele.
+- **Presença do dia (aba Hoje)**: marque quem veio, com busca e "marcar todos". O resumo mostra quantos goleiros e jogadores de linha vieram e quantos times dá para formar. Quem chega depois que o dia começou entra direto na fila de próximo. "Novo dia" limpa a presença, a fila e os times de próximo, mas mantém o histórico.
+- **Sorteio**: usa só os presentes. Monta times de 5 na linha mais um goleiro fixo, quando houver, e equilibra pelo nível (ou pelo nível automático). Os 2 primeiros times jogam, os outros ficam de próximo e quem sobrar fica de próximo. Dá para ajustar tocando no jogador.
+- **Fila (Times formados e De próximo)**: times formados esperando e fila de próximo por ordem de chegada. Quando 5 jogadores de linha de próximo se juntam, o app **fecha um time automaticamente**.
+- **Quem sai e completa o próximo time**: quem está de próximo se mistura com o primeiro time que perder. Dos jogadores que saem, entra primeiro quem ficou de fora mais vezes; no empate (e na primeira vez), sorteio. Ninguém fica sendo escolhido para sair toda hora.
+- **Goleiro de próximo**: time sem goleiro fixo joga com alguém de próximo no gol, que não perde o lugar na fila. O app reveza quem vai pro gol. Gol, assistência, jogo e vitória contam para ele.
 - **Partida**: gols, assistências, gol contra, gol sem autor, substituições e troca de goleiro. "Desfazer" não apaga o gol: ele fica em "Gols desfeitos", com quem registrou, quem desfez e a hora.
 - **Cronômetro** controlado pelo servidor: todos os aparelhos mostram o mesmo tempo. Tem ajuste de ±1 min.
 - **No campo**: a tela fica acesa durante a partida, o **apito** toca no fim do tempo ou quando a partida acaba, e o **placar grande** (📺) mostra o placar em tela cheia para quem está de fora.
