@@ -690,13 +690,13 @@ function enteringInfo(leavers) {
   let gk = base.find(isGk) || S.queue.find(isGk);
   const gkLeaving = !gk && leavers.find(isGk);
   const extra = [
-    fromLeavers ? `${fromLeavers} de quem saiu` : '',
-    gkLeaving ? `${esc(pname(gkLeaving))} no gol` : '',
+    fromLeavers ? `${fromLeavers} de quem saiu (revezamento)` : '',
+    gkLeaving ? `${esc(pname(gkLeaving))} volta no gol (não há outro goleiro esperando)` : '',
   ].filter(Boolean).join(' e ');
   return {
     team: t ? esc(t.name) : '',
     list: names([...(gk && !base.includes(gk) ? [gk] : []), ...base, ...fromQueue]),
-    extra: extra ? ` <span class="muted">+ ${extra}</span>` : '',
+    extra: extra ? ` + ${extra}` : '',
   };
 }
 
@@ -711,10 +711,10 @@ function goalLines(m, t) {
 let leaveSel = null; // { match: id, side: 'A'|'B' }
 
 // End of a match: the result, who scored, and what happens next.
-function nextPanel(m) {
+function nextPanel(m, readOnly = false) {
   const sA = score(m, 'A'), sB = score(m, 'B');
   const plan = nextPlan(m);
-  const chosen = leaveSel && leaveSel.match === m.id ? leaveSel.side : null;
+  const chosen = !readOnly && leaveSel && leaveSel.match === m.id ? leaveSel.side : null;
   const leaving = chosen || plan.leaving;
   const name = (t) => esc(m[`team${t}`].name);
   const tie = sA === sB;
@@ -734,11 +734,12 @@ function nextPanel(m) {
     who = `<p><b>Sai</b> ${name(leaving)} · <b>fica</b> ${name(otherSide(leaving))}${why}</p>
       <p><b>Entram${e.team ? ` (${e.team})` : ''}:</b> ${e.list || '<span class="muted">quem saiu</span>'}${e.list ? e.extra : ''}</p>`;
   } else {
-    who = '<p><b>Empate.</b> Escolha qual time sai:</p>';
+    who = readOnly ? '<p><b>Empate.</b> O organizador escolhe qual time sai.</p>' : '<p><b>Empate.</b> Escolha qual time sai:</p>';
   }
 
-  const pick = (t) => `<button class="${chosen === t ? 'on' : ''}" data-act="leavePick" data-match="${m.id}" data-side="${t}" aria-pressed="${chosen === t}">Sai ${name(t)}</button>`;
-  const choice = plan.leaving
+  const current = chosen || (plan.leaving !== 'both' ? plan.leaving : null);
+  const pick = (t) => `<button class="${current === t ? 'on' : ''}" data-act="leavePick" data-match="${m.id}" data-side="${t}" aria-pressed="${current === t}">Sai ${name(t)}</button>`;
+  const choice = readOnly ? '' : plan.leaving
     ? `<details class="r-override" ${chosen ? 'open' : ''}><summary>Trocar quem sai</summary>
         <div class="r-choice">${pick('A')}${pick('B')}</div>
         ${chosen ? `<button class="ghost small" data-act="leavePick" data-match="${m.id}" data-side="">Voltar para a regra</button>` : ''}
@@ -751,14 +752,15 @@ function nextPanel(m) {
     <div class="r-goals"><div>${goalLines(m, 'A')}</div><div>${goalLines(m, 'B')}</div></div>
     <div class="r-next">${who}<small class="muted">Quem sai vai para o fim da fila de próximo.</small></div>
     ${plan.leaving ? '' : choice}
-    <div class="r-actions">
+    ${readOnly ? `<div class="r-actions"><button class="small" data-act="shareResult" data-id="${m.id}">${ICON.share}Mandar no grupo</button></div>` : `<div class="r-actions">
+      ${leaving ? '' : '<p class="r-hint">Escolha acima qual time sai para chamar a próxima.</p>'}
       <button class="primary big" data-act="next" ${chosen ? `data-leaving="${chosen}"` : ''} ${leaving ? '' : 'disabled'}>${ICON.play}Chamar próxima partida</button>
       ${plan.leaving ? choice : ''}
       <div class="r-more">
         <button class="small" data-act="shareResult" data-id="${m.id}">${ICON.share}Mandar no grupo</button>
         <button class="ghost small" data-act="reopen" data-id="${m.id}">Reabrir partida</button>
       </div>
-    </div>
+    </div>`}
   </div>`;
 }
 
@@ -813,10 +815,10 @@ function renderMatch() {
   const m = currentMatch();
   if (!m) {
     const last = finishedMatches()[0];
-    const pendingNext = last && !last.nextMatchId && canEdit();
+    const pendingNext = last && !last.nextMatchId;
     box.innerHTML = `
       ${rsvpSelfCard()}
-      ${pendingNext ? nextPanel(last) : ''}
+      ${pendingNext ? nextPanel(last, !canEdit()) : ''}
       <div class="card empty" ${pendingNext ? 'hidden' : ''}>
         <h2>Nenhum jogo agora</h2>
         <p>${canEdit() ? 'Marque quem veio e sorteie os times na aba Hoje.' : 'Quando a partida começar, o placar aparece aqui.'}</p>
@@ -852,9 +854,9 @@ function renderMatch() {
         <span class="status-tag">Partida ${m.number} · ${status}${S.settings.goalLimit ? ` · até ${S.settings.goalLimit} gols` : ''}</span>
         ${prev && m.status === 'pending' ? `<div><button class="link-btn" data-act="shareResult" data-id="${prev.id}">${ICON.share}Mandar resultado da partida ${prev.number}</button></div>` : ''}
       </div>
-      ${canEdit() ? `<div class="controls">
+      ${canEdit() ? `<div class="controls ${m.status === 'pending' ? 'pending' : ''}">
         ${mainBtn}
-        <button class="btn-finish" data-act="finish">${ICON.flag}Encerrar</button>
+        ${m.status === 'pending' ? '' : `<button class="btn-finish" data-act="finish">${ICON.flag}Encerrar</button>`}
         <button class="icon-btn" data-act="matchMenu" aria-label="Mais opções da partida" title="Mais opções">${ICON.more}</button>
       </div>` : `<div class="row-btns center"><button class="ghost small" data-act="bigboard">${ICON.screen}Placar grande</button></div>`}
     </section>
@@ -1174,6 +1176,7 @@ function renderBuilder() {
   const m = currentMatch();
   $('#drawBox').hidden = Boolean(m);
   $('#drawBusy').hidden = !m;
+  if (m) $('#drawBusy h2').textContent = m.status === 'pending' ? 'Partida pronta para começar' : 'Partida em andamento';
   renderTeamCount();
   const playing = new Set(m ? [...m.teamA.players, ...m.teamB.players] : []);
   for (const id of builder.assign.keys()) if (!player(id)?.active || playing.has(id) || !isPresent(id)) builder.assign.delete(id);
@@ -1304,8 +1307,7 @@ function renderQueue() {
       ${edit && !m && S.teams.length >= 2 ? `<button class="primary big" data-act="startFromTeams">${ICON.play}Começar: ${esc(S.teams[0].name)} × ${esc(S.teams[1].name)}</button>` : ''}
       ${onField}
       <section class="card">
-        <div class="row-between"><h2>Times formados</h2>
-          ${edit && (S.teams.length || S.queue.length) ? '<button class="ghost small danger-text" data-act="qclear">Limpar tudo</button>' : ''}</div>
+        <h2>Times formados</h2>
         ${teamCards || `<p class="muted">Nenhum time formado esperando. Quando ${lineNeeded} jogadores de linha estão de próximo, o time fecha sozinho.</p>`}
       </section>
       <section class="card">
@@ -1318,6 +1320,7 @@ function renderQueue() {
         ${avail.length ? '<div class="row-btns" style="margin-top:0"><button class="small" data-act="qaddAll">Adicionar todos</button></div>' : ''}
         <div class="pool" style="margin-top:10px">${avail.map((p) => `<button class="pchip" data-act="qadd" data-player="${p.id}">+ ${p.position === 'GOL' ? GK : ''}${esc(p.nickname || p.name)}</button>`).join('') || '<p class="muted">Todos já estão na fila ou em campo.</p>'}</div>
       </details>` : ''}
+      ${edit && (S.teams.length || S.queue.length) ? '<div class="row-btns center"><button class="ghost small danger-text" data-act="qclear">Limpar times e fila</button></div>' : ''}
     </div>`;
 }
 
@@ -1694,6 +1697,21 @@ function otherGoalModal(team) {
     <button class="ghost wide" data-act="closeModal">Cancelar</button>`);
 }
 
+// A goal before "Começar" is almost always a mistake: ask, and start the
+// clock if it was a real goal.
+async function startedOrStart() {
+  const m = currentMatch();
+  if (!m || m.status !== 'pending') return Boolean(m);
+  const ok = await ask({
+    title: 'A partida ainda não começou',
+    text: 'Começar o cronômetro agora e registrar o gol?',
+    ok: `${ICON.play}Começar e registrar`,
+  });
+  if (!ok) return false;
+  const r = await act('POST', `/api/matches/${m.id}/timer`, { action: 'start' });
+  return Boolean(r?.ok);
+}
+
 async function registerGoal(payload, force = false) {
   closeModal();
   const m = currentMatch();
@@ -1712,7 +1730,8 @@ async function registerGoal(payload, force = false) {
     return toast('Gol repetido ignorado.', 'ok');
   }
   if (r.ok && r.autoFinished) toast(`Fim de jogo! Gol de ${pname(payload.scorerId)} fechou a partida.`, 'ok');
-  else if (r.ok) toast(r.replayed ? 'Gol já estava registrado.' : `Gol de ${pname(payload.scorerId)}!`, 'ok');
+  else if (r.ok && r.replayed) toast('Gol já estava registrado.', 'ok');
+  else if (r.ok && navigator.vibrate) navigator.vibrate(40);
 }
 
 const actions = {
@@ -1764,14 +1783,20 @@ const actions = {
     if (r?.ok) toast('Conta atualizada.', 'ok');
     loadUsers();
   },
-  goal(d) { if (canEdit()) goalModal(d.team, d.player); },
+  async goal(d) {
+    if (!canEdit() || !await startedOrStart()) return;
+    goalModal(d.team, d.player);
+  },
   gkPick(d) { if (canEdit()) gkModal(d.team); },
   gkSet(d) {
     closeModal();
     const m = currentMatch();
     act('POST', `/api/matches/${m.id}/gk`, { team: d.team, playerId: d.player || null });
   },
-  goalOther(d) { if (canEdit()) otherGoalModal(d.team); },
+  async goalOther(d) {
+    if (!canEdit() || !await startedOrStart()) return;
+    otherGoalModal(d.team);
+  },
   confirmGoal(d) {
     registerGoal({ team: d.team, scorerId: d.scorer || null, assistId: d.assist || null, ownGoal: d.own === '1' });
   },
