@@ -22,6 +22,9 @@ const LS = {
   },
 };
 
+// "1 time", "2 times".
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
 function fmt(ms) {
   const t = Math.floor(Math.max(0, ms) / 1000);
   return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
@@ -45,6 +48,9 @@ const ICON = {
   gear: svg('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'),
   logout: svg('<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>'),
   share: svg('<path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7M16 6l-4-4-4 4M12 2v13"/>'),
+  up: svg('<path d="M6 15l6-6 6 6"/>'),
+  down: svg('<path d="M6 9l6 6 6-6"/>'),
+  x: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
 };
 // Goalkeeper marker (replaces the glove emoji).
 const GK = '<span class="gk-tag" title="Goleiro">GOL</span>';
@@ -399,7 +405,47 @@ function closeModal() {
   modalRenderer = null;
   $('#modal').hidden = true;
   $('#modalBody').innerHTML = '';
+  if (askResolve) { const r = askResolve; askResolve = null; r(null); }
 }
+
+// Confirmation sheet (replaces the browser's confirm/prompt, which look
+// foreign, are easy to dismiss by accident and are blocked in some apps).
+// Resolves true (or the typed text when `input` is set), or null if cancelled.
+// A live sheet that was open before comes back afterwards.
+let askResolve = null;
+function ask({ title, text = '', ok = 'Confirmar', danger = false, input = null }) {
+  const back = modalRenderer;
+  return new Promise((resolve) => {
+    openModal(`
+      <h3>${title}</h3>
+      ${text ? `<p class="ask-text">${text}</p>` : ''}
+      <form id="askForm" class="ask-form" autocomplete="off">
+        ${input ? `<input id="askInput" type="${input.type || 'text'}" placeholder="${esc(input.placeholder || '')}" aria-label="${esc(input.label || title)}"${input.value ? ` value="${esc(input.value)}"` : ''}>` : ''}
+        <button type="submit" class="${danger ? 'danger' : 'primary'} big">${ok}</button>
+        <button type="button" class="ghost" data-act="closeModal">Cancelar</button>
+      </form>`);
+    askResolve = (v) => {
+      resolve(v);
+      if (back && $('#modal').hidden) openModal('', back);
+    };
+    const form = $('#askForm');
+    const field = $('#askInput');
+    if (field) field.focus();
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const r = askResolve;
+      askResolve = null;
+      const value = field ? field.value : true;
+      closeModal();
+      if (r) r(value);
+    });
+  });
+}
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (!$('#modal').hidden) closeModal();
+  else if (!$('#bigboard').hidden) $('#bigboard').click();
+});
 $('#bigboard').addEventListener('click', () => {
   $('#bigboard').hidden = true;
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
@@ -436,6 +482,37 @@ function renderConn() {
 }
 
 const initials = (name) => String(name || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+
+// Compact score in the header once the scoreboard scrolls out of view, so
+// the score and clock stay visible while tapping scorers lower on the page.
+function renderMini() {
+  const m = currentMatch();
+  const clock = tab === 'match' && m && $('#clock');
+  const show = Boolean(clock) && clock.getBoundingClientRect().bottom < $('.top').getBoundingClientRect().bottom;
+  const top = $('.top');
+  const mini = $('#miniScore');
+  if (!show) {
+    if (!mini.hidden) { mini.hidden = true; mini.innerHTML = ''; $('#miniPlay').innerHTML = ''; top.classList.remove('has-mini'); }
+    return;
+  }
+  const key = `${m.id}|${score(m, 'A')}|${score(m, 'B')}|${m.status}|${m.teamA.color}|${m.teamB.color}|${canEdit()}`;
+  if (mini.hidden || mini.dataset.key !== key) {
+    mini.dataset.key = key;
+    mini.innerHTML = `<span class="team-bar" style="--c:${m.teamA.color}"></span><b>${score(m, 'A')}–${score(m, 'B')}</b><span class="team-bar" style="--c:${m.teamB.color}"></span><span id="miniClock" class="mini-clock"></span>`;
+    $('#miniPlay').innerHTML = canEdit()
+      ? (m.status === 'running'
+        ? `<button class="mini-play dark" data-act="timer" data-a="pause" aria-label="Pausar">${ICON.pause}</button>`
+        : `<button class="mini-play primary" data-act="timer" data-a="start" aria-label="${m.status === 'pending' ? 'Começar' : 'Continuar'}">${ICON.play}</button>`)
+      : '';
+    mini.hidden = false;
+    top.classList.add('has-mini');
+  }
+  const ms = elapsed(m);
+  const el = $('#miniClock');
+  el.textContent = fmt(ms);
+  el.classList.toggle('over', ms >= m.durationMin * 60000);
+}
+window.addEventListener('scroll', () => { if (S) renderMini(); }, { passive: true });
 
 function renderHeader() {
   $('#btnMe').textContent = ME ? initials(ME.name) : '';
@@ -542,26 +619,48 @@ function eventsBlock(m) {
     <details class="all-events"><summary>Todos os lances (${goals.length}${removedCount ? ` + ${removedCount} desfeito${removedCount > 1 ? 's' : ''}` : ''})</summary>${eventsList(m)}</details>`;
 }
 
-// Substitutions and goalkeepers (opened from the match "more" menu).
+// Substitutions and goalkeepers (opened from the match "more" menu): tap who
+// leaves, then who comes in. "+ Pôr" adds someone without taking anyone out.
+let subSel = null; // { team: 'A'|'B', player: id|null }
+
 function subsSheet() {
   const m = currentMatch();
   if (!m) return '<h3>Nenhuma partida em andamento.</h3><button class="ghost wide" data-act="closeModal">Fechar</button>';
+  if (subSel && subSel.player && !m[`team${subSel.team}`].players.includes(subSel.player)) subSel = null;
   const used = new Set([...m.teamA.players, ...m.teamB.players]);
-  const avail = S.players.filter((p) => p.active && !used.has(p.id));
-  const opts = avail.map((p) => `<option value="${p.id}">${esc(p.nickname || p.name)}</option>`).join('');
+  const waitOrder = [...S.queue, ...S.teams.flatMap((t) => t.players)];
+  const rank = (id) => { const i = waitOrder.indexOf(id); return i === -1 ? Infinity : i; };
+  const avail = S.players
+    .filter((p) => p.active && !used.has(p.id) && (isPresent(p.id) || rank(p.id) !== Infinity))
+    .sort((a, b) => rank(a.id) - rank(b.id) || a.name.localeCompare(b.name, 'pt-BR'));
+  let incoming = '';
+  if (subSel) {
+    const team = m[`team${subSel.team}`];
+    const outName = subSel.player ? esc(pname(subSel.player)) : '';
+    incoming = `<div class="subs-in">
+      <h4>${subSel.player ? `Quem entra no lugar de ${outName}?` : `Quem entra no ${esc(team.name)}?`}</h4>
+      <div class="subs-grid">${avail.map((p) => `<button data-act="subIn" data-player="${p.id}"><span>${isGk(p.id) ? GK : ''}${esc(p.nickname || p.name)}</span></button>`).join('') || '<p class="muted">Ninguém esperando.</p>'}</div>
+      ${subSel.player ? `<button class="ghost wide danger-text" data-act="subOut">Só tirar ${outName}</button>` : ''}
+    </div>`;
+  }
   const side = (t) => {
     const team = m[`team${t}`];
-    return `<div class="sub-side">
-      <b style="display:flex;align-items:center;gap:8px"><span class="team-bar" style="--c:${team.color}"></span>${esc(team.name)}</b>
-      ${team.players.map((id) => `<div class="sub-row"><span>${team.gk === id ? GK : ''}${esc(pname(id))}</span>
-        <button class="link-btn danger-text" data-act="subRemove" data-team="${t}" data-player="${id}">Tirar</button></div>`).join('')}
-      ${avail.length ? `<div class="sub-row"><select id="subAdd${t}" aria-label="Jogador para entrar no ${esc(team.name)}">${opts}</select>
-        <button class="small" data-act="subAdd" data-team="${t}">Pôr</button></div>` : ''}
-      <button class="small ghost" data-act="gkPick" data-team="${t}">${team.gk ? `Goleiro: ${esc(pname(team.gk))}` : 'Escolher goleiro'}</button>
+    return `<div class="subs-team">
+      <div class="subs-team-head"><span class="team-bar" style="--c:${team.color}"></span>${esc(team.name)}</div>
+      <div class="subs-grid">
+        ${team.players.map((id) => {
+          const sel = subSel && subSel.team === t && subSel.player === id;
+          return `<button class="${sel ? 'sel' : ''}" data-act="subPick" data-team="${t}" data-player="${id}" aria-pressed="${sel}"><span>${team.gk === id ? GK : ''}${esc(pname(id))}</span></button>`;
+        }).join('')}
+        <button class="add ${subSel && subSel.team === t && !subSel.player ? 'sel' : ''}" data-act="subPick" data-team="${t}" data-player="">+ Pôr</button>
+      </div>
+      ${subSel && subSel.team === t ? incoming : ''}
+      <button class="ghost subs-gk" data-act="gkPick" data-team="${t}"><span>Goleiro</span><b>${team.gk ? esc(pname(team.gk)) : 'escolher'}</b></button>
     </div>`;
   };
   return `<h3>Substituições e goleiros</h3>
-    <div class="teams-grid">${side('A')}${side('B')}</div>
+    <p class="muted">Toque em quem sai e depois em quem entra. Quem sai vai para o fim da fila.</p>
+    ${side('A')}${side('B')}
     <button class="ghost wide" data-act="closeModal">Fechar</button>`;
 }
 
@@ -576,37 +675,77 @@ function nextPlan(m) {
   return { leaving: null, tie: true };
 }
 
-function nextPanel(m) {
-  const sA = score(m, 'A'), sB = score(m, 'B');
+function nextText(m) {
   const plan = nextPlan(m);
   const name = (t) => esc(m[`team${t}`].name);
   const entering = S.teams[0]
     ? `entra <b>${esc(S.teams[0].name)}</b>${S.teams[0].players.filter((id) => !isGk(id)).length < S.settings.teamSize - 1 ? ' (completado com quem saiu)' : ''}`
     : S.queue.length ? 'entra um time formado por quem está de próximo + quem saiu' : 'entra um time formado com quem saiu';
-  let text;
   if (plan.leaving === 'both') {
-    text = `Empate com 2 times de próximo: <b>saem os dois</b>. Entram <b>${esc(S.teams[0].name)}</b> × <b>${esc(S.teams[1].name)}</b>.`;
-  } else if (plan.leaving) {
-    text = plan.tie
+    return `Empate com 2 times de próximo: <b>saem os dois</b>. Entram <b>${esc(S.teams[0].name)}</b> × <b>${esc(S.teams[1].name)}</b>.`;
+  }
+  if (plan.leaving) {
+    return plan.tie
       ? `Empate e não há 2 times de próximo: fica <b>${name(otherSide(plan.leaving))}</b> (ganhou a partida anterior), sai <b>${name(plan.leaving)}</b> e ${entering}.`
       : `<b>${name(plan.leaving)}</b> perdeu e sai; ${entering}.`;
-  } else {
-    text = 'Empate: escolha qual time sai.';
   }
-  const ended = m.endReason === 'goals' ? `<p class="ended">Fim de jogo: chegou a ${S.settings.goalLimit} gols.</p>` : '';
-  return `<div class="card next">
-    <h3>Próxima partida</h3>
-    ${ended}
-    <p>${name('A')} <b>${sA} × ${sB}</b> ${name('B')}.</p>
-    <p>${text}</p>
-    <p class="muted">Quem sai vai para o fim da fila de próximo.</p>
-    <div class="row-btns">
-      ${plan.leaving ? `<button class="primary big" data-act="next">${ICON.play}Próxima partida</button>` : ''}
-      <button class="${plan.leaving ? 'ghost small' : ''}" data-act="next" data-leaving="A">Sai ${name('A')}</button>
-      <button class="${plan.leaving ? 'ghost small' : ''}" data-act="next" data-leaving="B">Sai ${name('B')}</button>
-      <button class="ghost small" data-act="reopen" data-id="${m.id}">Reabrir partida</button>
+  return 'Empate: escolha qual time sai.';
+}
+
+function goalLines(m, t) {
+  return live(m).filter((e) => e.team === t)
+    .map((e) => `${e.minute}' ${esc(pname(e.scorerId))}${e.ownGoal ? ' (contra)' : ''}`)
+    .join('<br>') || '—';
+}
+
+// End of a match: the result, who scored, and what happens next.
+function nextPanel(m) {
+  const sA = score(m, 'A'), sB = score(m, 'B');
+  const plan = nextPlan(m);
+  const name = (t) => esc(m[`team${t}`].name);
+  const team = (t, n, win) => `<div class="r-team ${win ? 'win' : ''}"><span class="team-bar" style="--c:${m[`team${t}`].color}"></span>${name(t)}</div>`;
+  return `<div class="card result next">
+    <p class="r-label">${m.endReason === 'goals' ? `Fim de jogo: chegou a ${S.settings.goalLimit} gols` : `Fim da partida ${m.number}`}</p>
+    <div class="r-score">${team('A', sA, sA > sB)}<span class="r-num">${sA}<span class="score-sep">–</span>${sB}</span>${team('B', sB, sB > sA)}</div>
+    <div class="r-goals"><div>${goalLines(m, 'A')}</div><div>${goalLines(m, 'B')}</div></div>
+    <p class="r-next">${nextText(m)} <span class="muted">Quem sai vai para o fim da fila de próximo.</span></p>
+    <div class="r-actions">
+      ${plan.leaving ? `<button class="primary big" data-act="next">${ICON.play}Chamar próxima partida</button>` : ''}
+      <div class="r-more">
+        <button class="${plan.leaving ? 'ghost small' : 'big'}" data-act="next" data-leaving="A">Sai ${name('A')}</button>
+        <button class="${plan.leaving ? 'ghost small' : 'big'}" data-act="next" data-leaving="B">Sai ${name('B')}</button>
+      </div>
+      <div class="r-more">
+        <button class="small" data-act="shareResult" data-id="${m.id}">${ICON.share}Mandar no grupo</button>
+        <button class="ghost small" data-act="reopen" data-id="${m.id}">Reabrir partida</button>
+      </div>
     </div>
   </div>`;
+}
+
+function resultText(m) {
+  const goals = (t) => live(m).filter((e) => e.team === t)
+    .map((e) => `${pname(e.scorerId)}${e.ownGoal ? ' (contra)' : ''}${e.assistId ? ` (passe de ${pname(e.assistId)})` : ''}`);
+  const lines = [`⚽ *Partida ${m.number}*`, `${m.teamA.name} ${score(m, 'A')} × ${score(m, 'B')} ${m.teamB.name}`];
+  for (const t of ['A', 'B']) {
+    const g = goals(t);
+    if (g.length) lines.push('', `*${m[`team${t}`].name}:* ${g.join(', ')}`);
+  }
+  return lines.join('\n');
+}
+
+// Opens the share sheet, or copies the text, or shows it to copy by hand.
+async function shareText(text, copiedMsg) {
+  if (navigator.share) {
+    try { await navigator.share({ text }); return; } catch (e) { if (e.name === 'AbortError') return; }
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(copiedMsg, 'ok');
+  } catch {
+    openModal(`<h3>Copie o texto</h3><textarea class="summary" readonly>${esc(text)}</textarea>
+      <button class="ghost wide" data-act="closeModal">Fechar</button>`);
+  }
 }
 
 // "Você vai?" card for the logged-in player while the confirmation is open.
@@ -621,22 +760,25 @@ function rsvpSelfCard() {
   }
   const going = r.yes.includes(ME.playerId) ? 'yes' : r.no.includes(ME.playerId) ? 'no' : '';
   return `<div class="card rsvp-self">
-    <b>Pelada ${date}: você vai?</b> <small class="muted">${r.yes.length} confirmado(s)</small>
+    <b>Pelada ${date}: você vai?</b> <small class="muted">${plural(r.yes.length, 'confirmado', 'confirmados')}</small>
     <div class="big-choice">
       <button class="yes ${going === 'yes' ? 'on' : ''}" data-act="rsvpMe" data-going="1" aria-pressed="${going === 'yes'}">Vou</button>
       <button class="no ${going === 'no' ? 'on' : ''}" data-act="rsvpMe" data-going="0" aria-pressed="${going === 'no'}">Não vou</button>
     </div></div>`;
 }
 
+let lastScoreKey = '';
+
 function renderMatch() {
   const box = $('#view-match');
   const m = currentMatch();
   if (!m) {
     const last = finishedMatches()[0];
+    const pendingNext = last && !last.nextMatchId && canEdit();
     box.innerHTML = `
       ${rsvpSelfCard()}
-      ${last && !last.nextMatchId && canEdit() ? nextPanel(last) : ''}
-      <div class="card empty">
+      ${pendingNext ? nextPanel(last) : ''}
+      <div class="card empty" ${pendingNext ? 'hidden' : ''}>
         <h2>Nenhum jogo agora</h2>
         <p>${canEdit() ? 'Marque quem veio e sorteie os times na aba Hoje.' : 'Quando a partida começar, o placar aparece aqui.'}</p>
         ${E(`<div class="row-btns center">
@@ -644,10 +786,13 @@ function renderMatch() {
           <button class="${S.teams.length >= 2 ? '' : 'primary'}" data-act="go" data-tab="teams">Ir para Hoje</button>
         </div>`)}
       </div>
-      ${last ? `<h3 class="section-title">Última partida</h3>${matchSummary(last)}` : ''}`;
+      ${last && !pendingNext ? `<h3 class="section-title">Última partida</h3>${matchSummary(last)}` : ''}`;
     return;
   }
   const sA = score(m, 'A'), sB = score(m, 'B');
+  const scoreKey = `${m.id}:${sA}:${sB}`;
+  const bump = lastScoreKey && lastScoreKey !== scoreKey && lastScoreKey.startsWith(`${m.id}:`);
+  lastScoreKey = scoreKey;
   const status = { pending: 'Não começou', running: 'Rolando', paused: 'Pausada' }[m.status];
   const running = m.status === 'running';
   const mainBtn = running
@@ -658,7 +803,7 @@ function renderMatch() {
     <section class="board" aria-label="Placar">
       <div class="board-teams">
         <div class="bteam"><span class="team-bar" style="--c:${m.teamA.color}"></span><span class="bteam-name">${esc(m.teamA.name)}</span></div>
-        <div class="score" aria-label="${sA} a ${sB}">${sA}<span class="score-sep">–</span>${sB}</div>
+        <div class="score${bump ? ' bump' : ''}" aria-label="${sA} a ${sB}">${sA}<span class="score-sep">–</span>${sB}</div>
         <div class="bteam"><span class="team-bar" style="--c:${m.teamB.color}"></span><span class="bteam-name">${esc(m.teamB.name)}</span></div>
       </div>
       <div class="clock-wrap ${m.status}">
@@ -668,7 +813,7 @@ function renderMatch() {
       </div>
       ${canEdit() ? `<div class="controls">
         ${mainBtn}
-        <button class="icon-btn" data-act="finish" aria-label="Encerrar partida" title="Encerrar partida">${ICON.flag}</button>
+        <button class="btn-finish" data-act="finish">${ICON.flag}Encerrar</button>
         <button class="icon-btn" data-act="matchMenu" aria-label="Mais opções da partida" title="Mais opções">${ICON.more}</button>
       </div>` : `<div class="row-btns center"><button class="ghost small" data-act="bigboard">${ICON.screen}Placar grande</button></div>`}
     </section>
@@ -681,12 +826,16 @@ function renderMatch() {
 
 function matchMenuSheet() {
   return `<h3>Opções da partida</h3>
+    <div class="menu-time">
+      <button data-act="adjust" data-s="-60">${ICON.minus}1 min</button>
+      <button data-act="adjust" data-s="60">${ICON.plus}1 min</button>
+    </div>
     <div class="sheet-list">
-      <button data-act="adjust" data-s="60" data-close>${ICON.plus}Somar 1 minuto</button>
-      <button data-act="adjust" data-s="-60" data-close>${ICON.minus}Tirar 1 minuto</button>
       <button data-act="subsMenu">${ICON.swap}Substituições e goleiros</button>
       <button data-act="bigboard" data-close>${ICON.screen}Placar grande (telão)</button>
-      <button data-act="testWhistle">${ICON.sound}Testar apito</button>
+    </div>
+    <div class="menu-sep"></div>
+    <div class="sheet-list">
       <button data-act="resetTimer" data-close>${ICON.reset}Zerar cronômetro</button>
       <button class="danger-text" data-act="cancelMatch" data-close>${ICON.trash}Cancelar partida</button>
     </div>
@@ -717,10 +866,11 @@ function tick() {
   renderBigboard();
   const m = currentMatch();
   const el = $('#clock');
-  if (!m || !el) return;
+  if (!m || !el) { renderMini(); return; }
   const ms = elapsed(m);
   const limit = m.durationMin * 60000;
   el.textContent = fmt(ms);
+  renderMini();
   const over = ms >= limit;
   el.classList.toggle('over', over);
   $('#clockSub').textContent = over
@@ -842,21 +992,25 @@ const shuffle = (arr) => {
   return a;
 };
 
+const TEAM_COUNTS = ['auto', 2, 3, 4, 5, 6, 7, 8];
+
 function initBuilderInputs() {
-  const sel = $('#teamCount');
-  sel.innerHTML = '<option value="auto">Automático</option>' +
-    [2, 3, 4, 5, 6, 7, 8].map((n) => `<option value="${n}">${n} times</option>`).join('');
-  sel.value = builder.mode;
-  sel.addEventListener('change', () => {
-    builder.mode = sel.value;
-    if (sel.value !== 'auto') setTeamCount(Number(sel.value));
-    else setTeamCount(autoCount());
-  });
+  renderTeamCount();
   renderTeamNames();
 }
 
+function renderTeamCount() {
+  const i = TEAM_COUNTS.indexOf(builder.mode === 'auto' ? 'auto' : Number(builder.mode));
+  $('#teamCountVal').innerHTML = builder.mode === 'auto'
+    ? `Auto <small>(${plural(S ? autoCount() : 2, 'time', 'times')})</small>`
+    : plural(Number(builder.mode), 'time', 'times');
+  document.querySelectorAll('[data-act=teamCountStep]').forEach((b) => {
+    b.disabled = Number(b.dataset.d) < 0 ? i <= 0 : i >= TEAM_COUNTS.length - 1;
+  });
+}
+
 function autoCount() {
-  const selected = builder.assign.size;
+  const selected = builder.assign.size || S.attendance.present.filter((id) => player(id)?.active).length;
   return Math.max(2, Math.floor(selected / S.settings.teamSize));
 }
 
@@ -926,7 +1080,7 @@ function renderPresence() {
   const ls = S.settings.teamSize - 1;
   const full = Math.floor(line / ls);
   $('#presenceSummary').innerHTML = present.length
-    ? `<b>${present.length} presentes</b> · ${gks} goleiro(s) · ${line} de linha → ${full} time(s) de ${ls} na linha${line % ls ? ` + ${line % ls} de próximo` : ''}`
+    ? `<b>${plural(present.length, 'presente', 'presentes')}</b> · ${plural(gks, 'goleiro', 'goleiros')} · ${line} de linha → ${plural(full, 'time', 'times')} de ${ls} na linha${line % ls ? ` + ${line % ls} de próximo` : ''}`
     : 'Toque nos jogadores que vieram hoje.';
 
   const q = ($('#presenceSearch').value || '').trim().toLowerCase();
@@ -937,8 +1091,8 @@ function renderPresence() {
     const on = isPresent(p.id);
     return `<button class="prow-toggle ${on ? 'on' : ''}" data-act="presence" data-player="${p.id}" ${playing.has(p.id) ? 'disabled title="Em jogo"' : ''} aria-pressed="${on}">
       <span class="check">${on ? '✓' : ''}</span>
-      <span class="pt-name">${p.position === 'GOL' ? GK : ''}${esc(p.name)}${p.nickname ? ` <small class="muted">"${esc(p.nickname)}"</small>` : ''}</span>
-      <small class="muted">${where.get(p.id) ? esc(where.get(p.id)) : '★'.repeat(p.rating)}</small>
+      <span class="pt-text"><span class="pt-name">${p.position === 'GOL' ? GK : ''}${esc(p.nickname || p.name)}</span>
+        ${where.get(p.id) ? `<span class="pt-where">${esc(where.get(p.id))}</span>` : ''}</span>
     </button>`;
   }).join('') || '<p class="muted">Nenhum jogador encontrado.</p>';
 }
@@ -977,6 +1131,9 @@ function renderBuilder() {
   if (document.activeElement !== dur && !dur.dataset.touched) dur.value = S.settings.durationMin;
 
   const m = currentMatch();
+  $('#drawBox').hidden = Boolean(m);
+  $('#drawBusy').hidden = !m;
+  renderTeamCount();
   const playing = new Set(m ? [...m.teamA.players, ...m.teamB.players] : []);
   for (const id of builder.assign.keys()) if (!player(id)?.active || playing.has(id) || !isPresent(id)) builder.assign.delete(id);
 
@@ -1006,18 +1163,28 @@ function renderBuilder() {
     const role = i < 2 ? 'joga agora' : `${i - 1}º na fila`;
     return `<div class="team-col" style="--c:${bTeamColor(i)}">
       <div class="team-col-head"><span class="dot"></span>${esc(bTeamName(i))}
-        <small>${ids.filter((id) => !isGk(id)).length}/${size - 1} linha · ${ids.some(isGk) ? 'com goleiro' : 'goleiro de próximo'} · força ${total} · ${role}</small></div>
+        <small>${ids.filter((id) => !isGk(id)).length}/${size - 1} na linha · ${ids.some(isGk) ? 'com goleiro' : 'sem goleiro fixo'} · nível ${total} · ${role}</small></div>
       ${ids.map((id) => `<div class="prow">${isGk(id) ? GK : ''}${esc(pname(id))}</div>`).join('') || '<div class="prow muted">vazio</div>'}
     </div>`;
   });
   const extras = [...builder.assign].filter(([, t]) => t === EXTRA).map(([id]) => id);
   if (extras.length) {
     cols.push(`<div class="team-col" style="--c:#94b5a3">
-      <div class="team-col-head"><span class="dot"></span>De próximo<small>${extras.length} jogador(es)</small></div>
+      <div class="team-col-head"><span class="dot"></span>De próximo<small>${plural(extras.length, 'jogador', 'jogadores')}</small></div>
       ${extras.map((id) => `<div class="prow">${esc(pname(id))}</div>`).join('')}
     </div>`);
   }
-  $('#builderPreview').innerHTML = cols.join('');
+  const drawn = builder.assign.size > 0;
+  $('#builderPreview').innerHTML = drawn ? cols.join('') : '';
+  $('#builderPreview').hidden = !drawn;
+  $('#clearSel').hidden = !drawn;
+
+  // Main action of the tab, always within thumb reach.
+  const present = S.attendance.present.filter((id) => player(id)?.active).length;
+  $('#todayBar').innerHTML = !canEdit() || m ? '' : drawn
+    ? `<button class="ghost" data-act="balance" aria-label="Sortear de novo">${ICON.reset}</button>
+       <button class="primary" data-act="createMatch">${ICON.play}Criar partida</button>`
+    : `<button class="primary" data-act="balance" ${present < 2 ? 'disabled' : ''}>Sortear com quem veio (${present})</button>`;
 }
 
 // Splits players into n teams of up to `size`: one goalkeeper per team,
@@ -1070,8 +1237,8 @@ function renderQueue() {
         <span class="dot" style="--c:${t.color}"></span><b>${esc(t.name)}</b>
         <small class="muted">${line}/${lineNeeded} na linha${line < lineNeeded ? ' · incompleto' : ''} · ${t.players.some(isGk) ? 'com goleiro' : 'goleiro de próximo'}</small>
         ${edit ? `<span class="acts">
-          <button class="small ghost" data-act="teamMove" data-team="${t.id}" data-d="-1" ${i === 0 ? 'disabled' : ''} aria-label="Subir ${esc(t.name)}">↑</button>
-          <button class="small ghost" data-act="teamMove" data-team="${t.id}" data-d="1" ${i === S.teams.length - 1 ? 'disabled' : ''} aria-label="Descer ${esc(t.name)}">↓</button>
+          <button class="ghost ibtn" data-act="teamMove" data-team="${t.id}" data-d="-1" ${i === 0 ? 'disabled' : ''} aria-label="Subir ${esc(t.name)}">${ICON.up}</button>
+          <button class="ghost ibtn" data-act="teamMove" data-team="${t.id}" data-d="1" ${i === S.teams.length - 1 ? 'disabled' : ''} aria-label="Descer ${esc(t.name)}">${ICON.down}</button>
           <button class="small ghost" data-act="teamDissolve" data-team="${t.id}">Desfazer</button>
         </span>` : ''}
       </div>
@@ -1083,9 +1250,9 @@ function renderQueue() {
   const loose = S.queue.map((id, i) => `<li class="qrow">
       <span class="pos">${i + 1}</span><span class="nm">${isGk(id) ? GK : ''}${esc(pname(id))}${inGoal.has(id) ? ` <small class="ingoal">no gol do ${esc(inGoal.get(id))}</small>` : ''}</span>
       ${edit ? `<span class="acts">
-        <button class="small ghost" data-act="qmove" data-player="${id}" data-d="-1" ${i === 0 ? 'disabled' : ''} aria-label="Subir ${esc(pname(id))}">↑</button>
-        <button class="small ghost" data-act="qmove" data-player="${id}" data-d="1" ${i === S.queue.length - 1 ? 'disabled' : ''} aria-label="Descer ${esc(pname(id))}">↓</button>
-        <button class="small ghost danger-text" data-act="qremove" data-player="${id}" aria-label="Tirar ${esc(pname(id))} da fila">✕</button>
+        <button class="ghost ibtn" data-act="qmove" data-player="${id}" data-d="-1" ${i === 0 ? 'disabled' : ''} aria-label="Subir ${esc(pname(id))}">${ICON.up}</button>
+        <button class="ghost ibtn" data-act="qmove" data-player="${id}" data-d="1" ${i === S.queue.length - 1 ? 'disabled' : ''} aria-label="Descer ${esc(pname(id))}">${ICON.down}</button>
+        <button class="ghost ibtn ibtn-remove" data-act="qremove" data-player="${id}" aria-label="Tirar ${esc(pname(id))} da fila">${ICON.x}</button>
       </span>` : ''}</li>`).join('');
 
   const avail = S.players.filter((p) => p.active && !playing.has(p.id) && !S.queue.includes(p.id) && !S.teams.some((t) => t.players.includes(p.id)));
@@ -1101,7 +1268,7 @@ function renderQueue() {
         ${teamCards || `<p class="muted">Nenhum time formado esperando. Quando ${lineNeeded} jogadores de linha estão de próximo, o time fecha sozinho.</p>`}
       </section>
       <section class="card">
-        <div class="row-between"><h2>De próximo</h2><small class="muted">${S.queue.length ? `faltam ${missing} para fechar um time` : `${lineNeeded} de linha fecham um time`}</small></div>
+        <div class="row-between"><h2>De próximo</h2><small class="muted">${S.queue.length ? `${missing === 1 ? 'falta 1' : `faltam ${missing}`} para fechar um time` : `${lineNeeded} de linha fecham um time`}</small></div>
         <div class="progress" aria-hidden="true"><span style="width:${pct}%"></span></div>
         ${loose ? `<ol class="queue">${loose}</ol>` : '<p class="muted">Ninguém de próximo.</p>'}
       </section>
@@ -1117,18 +1284,35 @@ function renderQueue() {
 
 const POS = { GOL: 'Goleiro', ZAG: 'Zagueiro', LAT: 'Lateral', MEI: 'Meio', ATA: 'Atacante' };
 
+let playerQuery = '';
 function renderPlayers() {
-  const active = S.players.filter((p) => p.active).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  const all = S.players.filter((p) => p.active).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  const q = playerQuery.trim().toLowerCase();
+  const active = q ? all.filter((p) => `${p.name} ${p.nickname}`.toLowerCase().includes(q)) : all;
+  const focused = document.activeElement && document.activeElement.id === 'playerSearch';
+  if (focused) { renderPlayerRows(active, all.length); return; }
   $('#playerList').innerHTML = `<div class="card">
-    <h3>Jogadores cadastrados (${active.length})</h3>
+    <h3>Jogadores cadastrados (${all.length})</h3>
+    <input id="playerSearch" type="search" placeholder="Buscar jogador" aria-label="Buscar jogador" autocomplete="off" value="${esc(playerQuery)}">
+    <div id="playerRows"></div>
+  </div>`;
+  renderPlayerRows(active, all.length);
+}
+
+function renderPlayerRows(active) {
+  $('#playerRows').innerHTML = `
     ${active.length ? `<ul class="plist">${active.map((p) => `<li>
       <div><b>${esc(p.name)}</b>${p.nickname ? ` <span class="muted">"${esc(p.nickname)}"</span>` : ''}
         <small class="muted">${POS[p.position] || ''} ${'★'.repeat(p.rating)}</small></div>
       <div class="acts"><button class="small ghost" data-act="editPlayer" data-player="${p.id}">editar</button>
         <button class="small ghost danger-text" data-act="delPlayer" data-player="${p.id}">excluir</button></div>
-    </li>`).join('')}</ul>` : '<p class="muted">Nenhum jogador ainda.</p>'}
-  </div>`;
+    </li>`).join('')}</ul>` : `<p class="muted">${playerQuery ? 'Nenhum jogador encontrado.' : 'Nenhum jogador ainda.'}</p>`}`;
 }
+document.addEventListener('input', (e) => {
+  if (e.target.id !== 'playerSearch') return;
+  playerQuery = e.target.value;
+  renderPlayers();
+});
 
 /* ------------------------------------------------------------ ajustes */
 
@@ -1176,7 +1360,9 @@ function renderSettings() {
   $('#setMatch').innerHTML =
     stepper('durationMin', 'Duração', 'Tempo de cada partida', (v) => `${v} min`) +
     stepper('goalLimit', 'Acaba com gols', 'A partida termina quando um time chega a esse número', (v) => (v ? `${v} gol${v > 1 ? 's' : ''}` : 'Sem limite')) +
-    stepper('teamSize', 'Jogadores por time', 'Contando o goleiro', (v) => `${v} <small>(${v - 1} + goleiro)</small>`);
+    stepper('teamSize', 'Jogadores por time', 'Contando o goleiro', (v) => `${v} <small>(${v - 1} + goleiro)</small>`) +
+    `<div class="setting"><div class="setting-text"><b>Apito</b><small>Toca e vibra quando o tempo acaba. Aumente o volume do celular.</small></div>
+      <button class="small" data-act="testWhistle">${ICON.sound}Testar</button></div>`;
 
   const opt = (v, title, desc) => `<button class="choice ${st.tieRule === v ? 'on' : ''}" data-act="setTie" data-v="${v}" aria-pressed="${st.tieRule === v}">
       <span class="radio">${st.tieRule === v ? '✓' : ''}</span>
@@ -1243,6 +1429,7 @@ function resetPlayerForm() {
   $('#playerFormTitle').textContent = 'Cadastrar jogador';
   $('#playerSubmit').textContent = 'Cadastrar';
   $('#playerCancel').hidden = true;
+  $('#playerFormWrap').open = false;
 }
 
 /* ------------------------------------------------------- estatísticas */
@@ -1373,7 +1560,7 @@ function summaryText() {
   const scorers = rows.filter((r) => r.g || r.a);
   if (scorers.length) {
     lines.push('', '*Gols e assistências*');
-    for (const r of scorers) lines.push(`${pname(r.id)}: ${r.g} gol(s), ${r.a} assist.`);
+    for (const r of scorers) lines.push(`${pname(r.id)}: ${plural(r.g, 'gol', 'gols')}, ${plural(r.a, 'assistência', 'assistências')}`);
   }
   return lines.join('\n');
 }
@@ -1401,6 +1588,7 @@ function renderStats() {
         <tbody>${rows.map((r, i) => `<tr data-act="profile" data-player="${r.id}"><td>${i + 1}</td><td class="l link">${esc(pname(r.id))}${r.gc ? ` <small class="muted">(${r.gc} contra)</small>` : ''}</td>
           <td>${r.j}</td><td>${r.v}</td><td><b>${r.g}</b></td><td>${r.a}</td><td>${r.g + r.a}</td></tr>`).join('')}</tbody>
       </table>
+      <p class="stats-legend">J jogos · V vitórias · G gols · A assistências${currentMatch() ? ' · gols da partida em andamento já contam; jogos e vitórias contam ao encerrar' : ''}</p>
       <p class="muted tip">Toque no jogador para ver o perfil.</p>` : '<p class="muted">Sem dados nesse período.</p>'}
     </div>
     ${gks.length ? `<h3 class="section-title">Goleiros</h3>
@@ -1442,7 +1630,7 @@ function goalModal(team, scorerId) {
   const m = currentMatch();
   const mates = sidePlayers(m, team).filter((id) => id !== scorerId);
   openModal(`
-    <h3>Gol de ${esc(pname(scorerId))}</h3>
+    <h3 class="goal-title"><span class="team-bar" style="--c:${m[`team${team}`].color}"></span>Gol de ${esc(pname(scorerId))}</h3>
     <p class="muted">Quem deu o passe?</p>
     <div class="pick">
       ${mates.map((id) => `<button data-act="confirmGoal" data-team="${team}" data-scorer="${scorerId}" data-assist="${id}">${esc(pname(id))}</button>`).join('')}
@@ -1474,9 +1662,13 @@ async function registerGoal(payload, force = false) {
   }, { quiet: ['DUPLICATE_SUSPECT'] });
   if (!r) return;
   if (r.code === 'DUPLICATE_SUSPECT') {
-    const again = confirm(`⚠️ ${r.error}\n\nProvavelmente é o MESMO lance registrado por outra pessoa.\n\nFoi mesmo um OUTRO gol? Toque OK para registrar mesmo assim.`);
+    const again = await ask({
+      title: 'Esse gol parece repetido',
+      text: `${esc(r.error)} Provavelmente outra pessoa já registrou o mesmo lance.`,
+      ok: 'Foi outro gol, registrar',
+    });
     if (again) return registerGoal(payload, true);
-    return toast('Gol duplicado ignorado.', 'ok');
+    return toast('Gol repetido ignorado.', 'ok');
   }
   if (r.ok && r.autoFinished) toast(`Fim de jogo! Gol de ${pname(payload.scorerId)} fechou a partida.`, 'ok');
   else if (r.ok) toast(r.replayed ? 'Gol já estava registrado.' : `Gol de ${pname(payload.scorerId)}!`, 'ok');
@@ -1486,7 +1678,7 @@ const actions = {
   go: (d) => setTab(d.tab),
   closeModal,
   matchMenu() { if (canEdit() && currentMatch()) openModal('', matchMenuSheet); },
-  subsMenu() { openModal('', subsSheet); },
+  subsMenu() { subSel = null; openModal('', subsSheet); },
   accountMenu() {
     openModal(`
       <div class="sheet-head"><span class="avatar" style="display:inline-flex;align-items:center;justify-content:center">${esc(initials(ME.name))}</span>
@@ -1503,7 +1695,7 @@ const actions = {
   linkNew() { linkMe({ newPlayer: true, position: $('#linkPos').value }); },
   changePassword() { passwordModal(); },
   async logout() {
-    if (!confirm('Sair da sua conta neste aparelho?')) return;
+    if (!await ask({ title: 'Sair da conta?', text: 'Você sai só neste aparelho.', ok: 'Sair', danger: true })) return;
     await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
     showAuth();
     setAuthMode('login');
@@ -1514,7 +1706,11 @@ const actions = {
   },
   async userPwd(d) {
     const u = USERS.find((x) => x.id === d.id);
-    const pwd = prompt(`Nova senha para ${u.name} (mínimo 6 caracteres). Passe para a pessoa e peça para trocar depois.`);
+    const pwd = await ask({
+      title: `Nova senha para ${esc(u.name)}`,
+      text: 'Mínimo 6 caracteres. Passe para a pessoa e peça para trocar depois.',
+      ok: 'Salvar senha', input: { type: 'text', label: 'Nova senha' },
+    });
     if (pwd === null) return;
     if (pwd.length < 6) return toast('A senha precisa ter pelo menos 6 caracteres.', 'err');
     const r = await act('POST', `/api/users/${d.id}/password`, { password: pwd });
@@ -1522,7 +1718,7 @@ const actions = {
   },
   async userActive(d) {
     const u = USERS.find((x) => x.id === d.id);
-    if (d.v === '0' && !confirm(`Desativar a conta de ${u.name}? A pessoa não consegue mais entrar.`)) return;
+    if (d.v === '0' && !await ask({ title: `Desativar a conta de ${esc(u.name)}?`, text: 'A pessoa não consegue mais entrar.', ok: 'Desativar', danger: true })) return;
     const r = await act('PUT', `/api/users/${d.id}`, { active: d.v === '1' });
     if (r?.ok) toast('Conta atualizada.', 'ok');
     loadUsers();
@@ -1541,12 +1737,12 @@ const actions = {
   async undo(d) {
     const m = S.matches.find((x) => x.id === d.match);
     const e = m && m.events.find((x) => x.id === d.ev);
-    if (!e || !confirm(`Desfazer o gol de ${pname(e.scorerId)} (${e.minute}')? Fica registrado quem desfez.`)) return;
+    if (!e || !await ask({ title: `Desfazer o gol de ${esc(pname(e.scorerId))}?`, text: `Gol aos ${e.minute}'. Fica registrado quem desfez.`, ok: 'Desfazer gol', danger: true })) return;
     const r = await act('DELETE', `/api/matches/${m.id}/events/${e.id}`);
     if (r?.ok) toast(r.already ? 'Esse gol já tinha sido desfeito.' : r.reopened ? 'Gol desfeito. Partida reaberta (pausada).' : 'Gol desfeito.', 'ok');
   },
   async reopen(d) {
-    if (!confirm('Reabrir a partida? Ela volta pausada com o placar atual.')) return;
+    if (!await ask({ title: 'Reabrir a partida?', text: 'Ela volta pausada com o placar atual.', ok: 'Reabrir' })) return;
     const r = await act('POST', `/api/matches/${d.id}/reopen`);
     if (r?.ok) toast('Partida reaberta.', 'ok');
   },
@@ -1562,23 +1758,31 @@ const actions = {
     const m = currentMatch();
     act('POST', `/api/matches/${m.id}/timer`, { action: 'adjust', seconds: Number(d.s), baseVersion: m.version });
   },
-  resetTimer() {
+  async resetTimer() {
     const m = currentMatch();
-    if (confirm('Zerar o cronômetro?')) act('POST', `/api/matches/${m.id}/timer`, { action: 'reset', baseVersion: m.version });
+    if (!await ask({ title: 'Zerar o cronômetro?', text: 'O tempo volta para 00:00. Os gols continuam.', ok: 'Zerar', danger: true })) return;
+    const cur = currentMatch();
+    if (cur) act('POST', `/api/matches/${cur.id}/timer`, { action: 'reset', baseVersion: cur.version });
   },
   async finish() {
     const m = currentMatch();
-    if (!confirm(`Encerrar a partida? Placar: ${score(m, 'A')} × ${score(m, 'B')}`)) return;
+    const sA = score(m, 'A'), sB = score(m, 'B');
+    const ok = await ask({
+      title: 'Encerrar a partida?',
+      text: `<span class="r-score"><span class="r-team"><span class="team-bar" style="--c:${m.teamA.color}"></span>${esc(m.teamA.name)}</span><span class="r-num">${sA}<span class="score-sep">–</span>${sB}</span><span class="r-team"><span class="team-bar" style="--c:${m.teamB.color}"></span>${esc(m.teamB.name)}</span></span>`,
+      ok: `${ICON.flag}Encerrar partida`,
+    });
+    if (!ok) return;
     const r = await act('POST', `/api/matches/${m.id}/finish`);
-    if (r?.ok) toast('Partida encerrada.', 'ok');
+    if (r?.ok) { setTab('match'); toast('Partida encerrada.', 'ok'); }
   },
   async cancelMatch() {
     const m = currentMatch();
-    if (!confirm('Cancelar esta partida? Os gols dela serão apagados e os jogadores voltam para o início da fila.')) return;
+    if (!await ask({ title: 'Cancelar esta partida?', text: 'Os gols dela são apagados e os jogadores voltam para o início da fila.', ok: 'Cancelar partida', danger: true })) return;
     await act('DELETE', `/api/matches/${m.id}`);
   },
   async deleteMatch(d) {
-    if (!confirm('Excluir esta partida do histórico? As estatísticas dela serão perdidas.')) return;
+    if (!await ask({ title: 'Excluir do histórico?', text: 'As estatísticas desta partida serão perdidas.', ok: 'Excluir partida', danger: true })) return;
     await act('DELETE', `/api/matches/${d.id}`);
   },
   async next(d) {
@@ -1587,16 +1791,50 @@ const actions = {
     if (r?.code === 'ALREADY_NEXT') toast(r.error, 'ok');
     if (r?.ok) toast('Próxima partida montada!', 'ok');
   },
-  subAdd(d) {
-    const m = currentMatch();
-    const id = $(`#subAdd${d.team}`).value;
-    if (id) act('POST', `/api/matches/${m.id}/players`, { team: d.team, playerId: id, op: 'add' });
+  subPick(d) {
+    const same = subSel && subSel.team === d.team && subSel.player === (d.player || null);
+    subSel = same ? null : { team: d.team, player: d.player || null };
+    if (modalRenderer) $('#modalBody').innerHTML = modalRenderer();
+    const panel = $('.subs-in');
+    if (panel) panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   },
-  subRemove(d) {
+  async subIn(d) {
     const m = currentMatch();
-    if (confirm(`Remover ${pname(d.player)} da partida?`)) {
-      act('POST', `/api/matches/${m.id}/players`, { team: d.team, playerId: d.player, op: 'remove' });
+    if (!m || !subSel) return;
+    const { team, player: out } = subSel;
+    if (out) {
+      const r = await act('POST', `/api/matches/${m.id}/players`, { team, playerId: out, op: 'remove' });
+      if (!r?.ok) return;
     }
+    const r = await act('POST', `/api/matches/${m.id}/players`, { team, playerId: d.player, op: 'add' });
+    if (!r?.ok) return;
+    if (out) await act('POST', '/api/queue', { playerIds: [out] });
+    subSel = null;
+    if (modalRenderer) $('#modalBody').innerHTML = modalRenderer();
+    toast(out ? `${pname(d.player)} entrou no lugar de ${pname(out)}.` : `${pname(d.player)} entrou.`, 'ok');
+  },
+  async subOut() {
+    const m = currentMatch();
+    if (!m || !subSel?.player) return;
+    const { team, player: out } = subSel;
+    const r = await act('POST', `/api/matches/${m.id}/players`, { team, playerId: out, op: 'remove' });
+    if (!r?.ok) return;
+    await act('POST', '/api/queue', { playerIds: [out] });
+    subSel = null;
+    if (modalRenderer) $('#modalBody').innerHTML = modalRenderer();
+    toast(`${pname(out)} saiu e foi para a fila.`, 'ok');
+  },
+  shareResult(d) {
+    const m = S.matches.find((x) => x.id === d.id);
+    if (m) shareText(resultText(m), 'Resultado copiado! Cole no grupo.');
+  },
+  toTop() { window.scrollTo({ top: 0, behavior: 'smooth' }); },
+  teamCountStep(d) {
+    const cur = TEAM_COUNTS.indexOf(builder.mode === 'auto' ? 'auto' : Number(builder.mode));
+    const next = TEAM_COUNTS[Math.min(TEAM_COUNTS.length - 1, Math.max(0, cur + Number(d.d)))];
+    builder.mode = String(next);
+    setTeamCount(next === 'auto' ? autoCount() : next);
+    renderTeamCount();
   },
 
   // times
@@ -1632,12 +1870,12 @@ const actions = {
     if (r?.ok) {
       builder.assign.clear();
       setTab('match');
-      toast('Partida criada! Toque em Iniciar.', 'ok');
+      toast('Partida criada! Toque em Começar.', 'ok');
     }
   },
   async startFromTeams() {
     const r = await act('POST', '/api/matches/from-teams', { durationMin: S.settings.durationMin });
-    if (r?.ok) { setTab('match'); toast('Partida criada! Toque em Iniciar.', 'ok'); }
+    if (r?.ok) { setTab('match'); toast('Partida criada! Toque em Começar.', 'ok'); }
   },
 
   presence(d) { setPresence([d.player], !isPresent(d.player)); },
@@ -1651,10 +1889,12 @@ const actions = {
     const m = currentMatch();
     const playing = new Set(m ? [...m.teamA.players, ...m.teamB.players] : []);
     const ids = S.attendance.present.filter((id) => !playing.has(id));
-    if (ids.length && confirm('Desmarcar todos os presentes? Eles também saem da fila de próximos.')) setPresence(ids, false);
+    if (!ids.length) return;
+    ask({ title: 'Desmarcar todos os presentes?', text: 'Eles também saem da fila de próximo.', ok: 'Desmarcar todos', danger: true })
+      .then((ok) => { if (ok) setPresence(ids, false); });
   },
   async newDay() {
-    if (!confirm('Começar um novo dia? A lista de presença, os times de próximo e a fila serão limpos. O histórico e as estatísticas continuam.')) return;
+    if (!await ask({ title: 'Começar um novo dia?', text: 'A lista de presença, os times formados e a fila são limpos. O histórico e as estatísticas continuam.', ok: 'Começar novo dia', danger: true })) return;
     const r = await act('POST', '/api/day/reset', { date: today() });
     if (r?.ok) { builder.assign.clear(); toast('Novo dia começado. Marque os presentes.', 'ok'); }
   },
@@ -1663,7 +1903,7 @@ const actions = {
     const date = $('#rsvpDate').value;
     if (!date) return toast('Escolha a data do jogo.', 'warn');
     if (S.rsvp.date && S.rsvp.date !== date && (S.rsvp.yes.length || S.rsvp.no.length) &&
-        !confirm('Abrir uma nova lista? As respostas da lista atual serão apagadas.')) return;
+        !await ask({ title: 'Abrir uma nova lista?', text: 'As respostas da lista atual serão apagadas.', ok: 'Abrir nova lista', danger: true })) return;
     const r = await act('POST', '/api/rsvp/open', { date });
     if (r?.ok) toast('Lista aberta. Agora mande o link no grupo.', 'ok');
   },
@@ -1671,16 +1911,11 @@ const actions = {
   async rsvpShare() {
     const url = `${location.origin}/confirmar.html`;
     const date = S.rsvp.date.split('-').reverse().join('/');
-    const text = `⚽ Pelada ${date}: entre no app e confirme se você vai → ${url}`;
-    if (navigator.share) {
-      try { await navigator.share({ text }); return; } catch (e) { if (e.name === 'AbortError') return; }
-    }
-    try { await navigator.clipboard.writeText(text); toast('Link copiado! Cole no grupo.', 'ok'); }
-    catch { prompt('Copie o link:', url); }
+    shareText(`⚽ Pelada ${date}: entre no app e confirme se você vai → ${url}`, 'Link copiado! Cole no grupo.');
   },
   async rsvpRemove(d) {
     const name = pname(d.player);
-    if (!confirm(`Tirar ${name} da lista de confirmados?${isPresent(d.player) ? ' Ele também já está marcado como presente: desmarque em "Quem veio hoje" se não veio.' : ''}`)) return;
+    if (!await ask({ title: `Tirar ${esc(name)} da lista?`, text: isPresent(d.player) ? 'Ele também já está marcado como presente: desmarque em "Quem veio hoje" se não veio.' : '', ok: 'Tirar da lista', danger: true })) return;
     const r = await act('POST', '/api/rsvp/answer', { playerId: d.player, going: null });
     if (r?.ok) toast(`${name} saiu da lista.`, 'ok');
   },
@@ -1724,10 +1959,11 @@ const actions = {
   },
   async resetData(d) {
     const all = d.scope === 'all';
-    const msg = all
-      ? 'Isso apaga TODOS os jogadores, partidas e estatísticas. As contas continuam.\n\nPara confirmar, digite ZERAR:'
-      : 'Apagar os jogadores fictícios e as partidas em que eles jogaram?\n\nPara confirmar, digite ZERAR:';
-    const typed = prompt(msg);
+    const typed = await ask({
+      title: all ? 'Zerar todos os dados de jogo?' : 'Apagar os jogadores fictícios?',
+      text: `${all ? 'Apaga <b>todos</b> os jogadores, partidas e estatísticas. As contas continuam.' : 'Apaga os fictícios e as partidas em que eles jogaram.'} Para confirmar, digite <b>ZERAR</b>.`,
+      ok: all ? 'Zerar tudo' : 'Apagar fictícios', danger: true, input: { placeholder: 'ZERAR', label: 'Digite ZERAR' },
+    });
     if (typed === null) return;
     const r = await act('POST', '/api/admin/reset', { scope: d.scope, confirm: typed.trim().toUpperCase() });
     if (r?.ok) {
@@ -1756,11 +1992,18 @@ const actions = {
   teamMove(d) { act('POST', '/api/teams/move', { teamId: d.team, delta: Number(d.d) }); },
   teamDissolve(d) {
     const t = S.teams.find((x) => x.id === d.team);
-    if (t && confirm(`Desfazer ${t.name}? Os jogadores voltam para o fim da fila de próximo.`)) act('DELETE', `/api/teams/${t.id}`);
+    if (t) ask({ title: `Desfazer ${esc(t.name)}?`, text: 'Os jogadores voltam para o fim da fila de próximo.', ok: 'Desfazer time', danger: true })
+      .then((ok) => { if (ok) act('DELETE', `/api/teams/${t.id}`); });
   },
   qmove(d) { act('POST', '/api/queue/move', { playerId: d.player, delta: Number(d.d) }); },
-  qremove(d) { if (confirm(`Tirar ${pname(d.player)} da fila de próximos?`)) act('DELETE', `/api/queue/${d.player}`); },
-  qclear() { if (confirm('Limpar os times formados e a fila de próximo?')) act('DELETE', '/api/queue'); },
+  qremove(d) {
+    ask({ title: `Tirar ${esc(pname(d.player))} da fila?`, ok: 'Tirar da fila', danger: true })
+      .then((ok) => { if (ok) act('DELETE', `/api/queue/${d.player}`); });
+  },
+  qclear() {
+    ask({ title: 'Limpar tudo?', text: 'Os times formados e a fila de próximo são esvaziados.', ok: 'Limpar tudo', danger: true })
+      .then((ok) => { if (ok) act('DELETE', '/api/queue'); });
+  },
 
   // jogadores
   editPlayer(d) {
@@ -1774,27 +2017,16 @@ const actions = {
     $('#playerFormTitle').textContent = 'Editar jogador';
     $('#playerSubmit').textContent = 'Salvar';
     $('#playerCancel').hidden = false;
-    f.scrollIntoView({ behavior: 'smooth' });
+    $('#playerFormWrap').open = true;
+    $('#playerFormWrap').scrollIntoView({ behavior: 'smooth' });
     f.name.focus();
   },
   async delPlayer(d) {
-    if (!confirm(`Excluir ${pname(d.player)}? As estatísticas antigas continuam no histórico.`)) return;
+    if (!await ask({ title: `Excluir ${esc(pname(d.player))}?`, text: 'As estatísticas antigas continuam no histórico.', ok: 'Excluir jogador', danger: true })) return;
     await act('DELETE', `/api/players/${d.player}`);
   },
   profile(d) { profileModal(d.player); },
-  async shareSummary() {
-    const text = summaryText();
-    if (navigator.share) {
-      try { await navigator.share({ text }); return; } catch (e) { if (e.name === 'AbortError') return; }
-    }
-    try {
-      await navigator.clipboard.writeText(text);
-      toast('Resumo copiado! Cole no grupo do WhatsApp.', 'ok');
-    } catch {
-      openModal(`<h3>Resumo</h3><textarea class="summary" readonly>${esc(text)}</textarea>
-        <button class="ghost wide" data-act="closeModal">Fechar</button>`);
-    }
-  },
+  shareSummary() { shareText(summaryText(), 'Resumo copiado! Cole no grupo do WhatsApp.'); },
   step(d) {
     const [min, max] = SETTING_LIMITS[d.key];
     const v = Math.min(max, Math.max(min, S.settings[d.key] + Number(d.d)));
@@ -1840,7 +2072,7 @@ $('#playerCancel').addEventListener('click', resetPlayerForm);
 $('#restoreFile').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   e.target.value = '';
-  if (!file || !confirm('Restaurar este backup? TODOS os dados atuais serão substituídos.')) return;
+  if (!file || !await ask({ title: 'Restaurar este backup?', text: '<b>Todos</b> os dados atuais serão substituídos.', ok: 'Restaurar', danger: true })) return;
   try {
     const r = await act('POST', '/api/restore', JSON.parse(await file.text()));
     if (r?.ok) { toast('Backup restaurado.', 'ok'); loadBackups(); }

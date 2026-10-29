@@ -68,7 +68,9 @@
       <span class="brand-word">PELADA</span>
       <span id="conn" class="conn" title="Conexão em tempo real">Conectando</span>
     </div>
+    <button id="miniScore" class="mini-score" data-act="toTop" aria-label="Voltar ao placar" hidden></button>
     <div class="top-actions">
+      <span id="miniPlay"></span>
       <button id="btnMe" class="avatar" data-act="accountMenu" aria-label="Minha conta e ajustes"></button>
     </div>
   </header>
@@ -83,10 +85,7 @@
       <div class="card">
         <div class="row-between">
           <h2>Quem veio hoje</h2>
-          <span class="acts">
-            <button class="small" data-act="guestAdd">+ Convidado</button>
-            <button class="ghost small" data-act="newDay">Novo dia</button>
-          </span>
+          <button class="small" data-act="guestAdd">+ Convidado</button>
         </div>
         <div id="dayBanner"></div>
         <p id="presenceSummary" class="muted"></p>
@@ -98,30 +97,40 @@
         <div id="presenceList" class="presence"></div>
       </div>
 
-      <div class="card">
-        <h2>Sortear times</h2>
-        <p class="muted">Usa só quem veio. Os 2 primeiros times jogam, os outros ficam de próximo.</p>
-        <div class="form-grid">
-          <label>Quantidade de times
-            <select id="teamCount"></select>
-          </label>
-          <label>Duração (min)
-            <input id="duration" type="number" min="1" max="120" inputmode="numeric">
-          </label>
-        </div>
-        <div id="teamNames" class="team-names"></div>
-        <div class="row-btns">
-          <button data-act="balance" class="primary big">Sortear com quem veio</button>
-          <button data-act="clearSel" class="ghost small">Limpar sorteio</button>
-        </div>
+      <div id="drawBusy" class="card draw-busy" hidden>
+        <h2>Partida em andamento</h2>
+        <p class="muted">Quem chegar agora entra no fim da fila de próximo. Para sortear de novo, encerre a partida.</p>
+        <button class="primary" data-act="go" data-tab="match">Ver o jogo</button>
       </div>
-      <div id="builderPreview" class="teams-grid multi"></div>
-      <details class="card">
-        <summary>Ajustar times na mão</summary>
-        <p class="muted">Toque no jogador para trocar de time.</p>
-        <div id="builderPool" class="pool"></div>
-      </details>
-      <button data-act="createMatch" class="primary big">Criar partida</button>
+
+      <div id="drawBox" class="stack">
+        <div class="card">
+          <div class="row-between">
+            <h2>Sortear times</h2>
+            <button data-act="clearSel" class="ghost small" id="clearSel" hidden>Limpar sorteio</button>
+          </div>
+          <p class="muted">Usa só quem veio. Os 2 primeiros times jogam, os outros ficam de próximo.</p>
+          <div class="draw-opts">
+            <div class="field">Times
+              <div class="stepper">
+                <button data-act="teamCountStep" data-d="-1" aria-label="Menos times">−</button>
+                <span class="val" id="teamCountVal"></span>
+                <button data-act="teamCountStep" data-d="1" aria-label="Mais times">+</button>
+              </div>
+            </div>
+            <label class="field">Duração (min)
+              <input id="duration" type="number" min="1" max="120" inputmode="numeric">
+            </label>
+          </div>
+          <div id="teamNames" class="team-names"></div>
+        </div>
+        <div id="builderPreview" class="teams-grid multi"></div>
+        <details class="card" id="manualBox">
+          <summary>Ajustar times na mão</summary>
+          <p class="muted">Toque no jogador para trocar de time.</p>
+          <div id="builderPool" class="pool"></div>
+        </details>
+      </div>
 
       <details class="card">
         <summary>Confirmação de presença por link</summary>
@@ -132,6 +141,13 @@
         </div>
         <div id="rsvpBox"></div>
       </details>
+
+      <div class="end-day">
+        <span>Acabou a pelada de hoje?</span>
+        <button class="ghost small" data-act="newDay">Começar novo dia</button>
+      </div>
+
+      <div id="todayBar" class="today-bar"></div>
     </section>
 
     <!-- PRÓXIMOS -->
@@ -140,8 +156,9 @@
     <!-- JOGADORES -->
     <section id="view-players" class="view">
       <button class="ghost small back-btn" data-act="go" data-tab="match"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>Voltar</button>
-      <form id="playerForm" class="card" autocomplete="off">
-        <h2 id="playerFormTitle">Cadastrar jogador</h2>
+      <details id="playerFormWrap" class="card player-form-wrap">
+      <summary id="playerFormTitle">Cadastrar jogador</summary>
+      <form id="playerForm" autocomplete="off">
         <div class="form-grid">
           <label>Nome<input name="name" maxlength="40" required></label>
           <label>Apelido<input name="nickname" maxlength="20"></label>
@@ -168,6 +185,7 @@
           <button type="button" class="ghost" id="playerCancel" hidden>Cancelar</button>
         </div>
       </form>
+      </details>
       <div id="playerList"></div>
 
     </section>
@@ -176,62 +194,64 @@
     <section id="view-settings" class="view">
       <button class="ghost small back-btn" data-act="go" data-tab="match"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>Voltar</button>
       <div class="card">
-        <h2>👤 Minha conta</h2>
+        <h2>Minha conta</h2>
         <div id="setAccount"></div>
       </div>
 
       <div id="rulesSummary" class="card summary-card"></div>
 
       <div class="card">
-        <h2>⏱️ Partida</h2>
+        <h2>Partida</h2>
         <div id="setMatch"></div>
       </div>
 
       <div class="card">
-        <h2>🤝 Empate</h2>
+        <h2>Empate</h2>
         <p class="muted">O que acontece quando a partida termina empatada.</p>
         <div id="setTie" class="choice-list"></div>
       </div>
 
       <div class="card">
-        <h2>🎲 Sorteio</h2>
+        <h2>Sorteio</h2>
         <div id="setDraw"></div>
       </div>
 
       <div class="card admin-only">
-        <h2>👥 Contas</h2>
+        <h2>Contas</h2>
         <p class="muted">Quem se cadastra entra como <b>Jogador</b> (acompanha e confirma presença). Promova a <b>Organizador</b> quem cuida da mesa: registra gols, monta times e marca presença.</p>
         <div id="setUsers"><p class="muted">Carregando…</p></div>
       </div>
 
-      <div class="card admin-only">
-        <h2>Testes e lançamento</h2>
-        <p class="muted">Crie jogadores fictícios para testar o app. Antes de lançar, apague os testes ou zere tudo. Uma cópia de segurança é salva antes de apagar.</p>
-        <div class="row-btns">
-          <button class="small" data-act="seedDemo">Criar 20 jogadores fictícios</button>
-          <button class="small ghost" data-act="resetData" data-scope="demo">Apagar só os fictícios</button>
+      <details class="card admin-only admin-tools">
+        <summary>Backups, testes e zerar dados</summary>
+        <div class="admin-block">
+          <h3>Backups</h3>
+          <p class="muted">O servidor guarda sozinho uma cópia de tudo por dia (últimos 7 dias). De vez em quando, baixe uma cópia e guarde no celular ou no Drive: se o servidor tiver problema, ela salva o histórico.</p>
+          <div class="row-btns">
+            <button class="primary" data-act="backup"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>Baixar cópia agora</button>
+          </div>
+          <h3 class="sub-title">Cópias automáticas do servidor</h3>
+          <div id="backupList"><p class="muted">Carregando…</p></div>
+          <details class="danger-zone">
+            <summary>Restaurar uma cópia</summary>
+            <p>Troca <b>todos</b> os dados atuais pelos do arquivo escolhido. Use só se perdeu dados.</p>
+            <label class="button danger">Escolher arquivo de backup…<input id="restoreFile" type="file" accept="application/json,.json" hidden></label>
+          </details>
         </div>
-        <details class="danger-zone">
-          <summary>Zerar para o lançamento</summary>
-          <p>Apaga <b>todos</b> os jogadores, partidas, estatísticas, fila, presença e confirmações. As contas e as regras continuam.</p>
-          <button class="small danger" data-act="resetData" data-scope="all">Zerar todos os dados de jogo</button>
-        </details>
-      </div>
-
-      <div class="card admin-only">
-        <h2>Backups</h2>
-        <p class="muted">O servidor guarda sozinho uma cópia de tudo por dia (últimos 7 dias). De vez em quando, baixe uma cópia e guarde no celular ou no Drive: se o servidor tiver problema, ela salva o histórico.</p>
-        <div class="row-btns">
-          <button class="primary" data-act="backup">⬇️ Baixar cópia agora</button>
+        <div class="admin-block">
+          <h3>Testes e lançamento</h3>
+          <p class="muted">Crie jogadores fictícios para testar o app. Antes de lançar, apague os testes ou zere tudo. Uma cópia de segurança é salva antes de apagar.</p>
+          <div class="row-btns">
+            <button class="small" data-act="seedDemo">Criar 20 jogadores fictícios</button>
+            <button class="small ghost" data-act="resetData" data-scope="demo">Apagar só os fictícios</button>
+          </div>
+          <details class="danger-zone">
+            <summary>Zerar para o lançamento</summary>
+            <p>Apaga <b>todos</b> os jogadores, partidas, estatísticas, fila, presença e confirmações. As contas e as regras continuam.</p>
+            <button class="small danger" data-act="resetData" data-scope="all">Zerar todos os dados de jogo</button>
+          </details>
         </div>
-        <h3 class="sub-title">Cópias automáticas do servidor</h3>
-        <div id="backupList"><p class="muted">Carregando…</p></div>
-        <details class="danger-zone">
-          <summary>Restaurar uma cópia</summary>
-          <p>Troca <b>todos</b> os dados atuais pelos do arquivo escolhido. Use só se perdeu dados.</p>
-          <label class="button danger">Escolher arquivo de backup…<input id="restoreFile" type="file" accept="application/json,.json" hidden></label>
-        </details>
-      </div>
+      </details>
 
     </section>
 
