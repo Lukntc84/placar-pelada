@@ -487,8 +487,8 @@ const initials = (name) => String(name || '?').trim().split(/\s+/).slice(0, 2).m
 // the score and clock stay visible while tapping scorers lower on the page.
 function renderMini() {
   const m = currentMatch();
-  const clock = tab === 'match' && m && $('#clock');
-  const show = Boolean(clock) && clock.getBoundingClientRect().bottom < $('.top').getBoundingClientRect().bottom;
+  const digits = tab === 'match' && m && $('#view-match .score');
+  const show = Boolean(digits) && digits.getBoundingClientRect().bottom <= $('.top').getBoundingClientRect().bottom;
   const top = $('.top');
   const mini = $('#miniScore');
   if (!show) {
@@ -675,46 +675,85 @@ function nextPlan(m) {
   return { leaving: null, tie: true };
 }
 
-function nextText(m) {
-  const plan = nextPlan(m);
-  const name = (t) => esc(m[`team${t}`].name);
-  const entering = S.teams[0]
-    ? `entra <b>${esc(S.teams[0].name)}</b>${S.teams[0].players.filter((id) => !isGk(id)).length < S.settings.teamSize - 1 ? ' (completado com quem saiu)' : ''}`
-    : S.queue.length ? 'entra um time formado por quem está de próximo + quem saiu' : 'entra um time formado com quem saiu';
-  if (plan.leaving === 'both') {
-    return `Empate com 2 times de próximo: <b>saem os dois</b>. Entram <b>${esc(S.teams[0].name)}</b> × <b>${esc(S.teams[1].name)}</b>.`;
-  }
-  if (plan.leaving) {
-    return plan.tie
-      ? `Empate e não há 2 times de próximo: fica <b>${name(otherSide(plan.leaving))}</b> (ganhou a partida anterior), sai <b>${name(plan.leaving)}</b> e ${entering}.`
-      : `<b>${name(plan.leaving)}</b> perdeu e sai; ${entering}.`;
-  }
-  return 'Empate: escolha qual time sai.';
+// Who plays the next match, mirroring the server: the first waiting team
+// (completed from the loose queue, then from who left), or a team formed
+// from the loose queue plus who left.
+function enteringInfo(leavers) {
+  const line = S.settings.teamSize - 1;
+  const names = (ids) => ids.map((id) => esc(pname(id))).join(', ');
+  const t = S.teams[0];
+  const base = t ? t.players : [];
+  const missing = Math.max(0, line - base.filter((id) => !isGk(id)).length);
+  const fromQueue = S.queue.filter((id) => !isGk(id) && !base.includes(id)).slice(0, missing);
+  const fromLeavers = missing - fromQueue.length;
+  // A goalkeeper is pulled in too: the first one waiting, else the one who left.
+  let gk = base.find(isGk) || S.queue.find(isGk);
+  const gkLeaving = !gk && leavers.find(isGk);
+  const extra = [
+    fromLeavers ? `${fromLeavers} de quem saiu` : '',
+    gkLeaving ? `${esc(pname(gkLeaving))} no gol` : '',
+  ].filter(Boolean).join(' e ');
+  return {
+    team: t ? esc(t.name) : '',
+    list: names([...(gk && !base.includes(gk) ? [gk] : []), ...base, ...fromQueue]),
+    extra: extra ? ` <span class="muted">+ ${extra}</span>` : '',
+  };
 }
 
 function goalLines(m, t) {
   return live(m).filter((e) => e.team === t)
-    .map((e) => `${e.minute}' ${esc(pname(e.scorerId))}${e.ownGoal ? ' (contra)' : ''}`)
+    .map((e) => `${e.minute}' <b>${esc(pname(e.scorerId))}</b>${e.ownGoal ? ' (contra)' : ''}${e.assistId ? ` <small>(${esc(pname(e.assistId))})</small>` : ''}`)
     .join('<br>') || '—';
 }
+
+// Team chosen to leave on the result card; the call only happens on
+// "Chamar próxima partida", so a mistaken tap never starts the next match.
+let leaveSel = null; // { match: id, side: 'A'|'B' }
 
 // End of a match: the result, who scored, and what happens next.
 function nextPanel(m) {
   const sA = score(m, 'A'), sB = score(m, 'B');
   const plan = nextPlan(m);
+  const chosen = leaveSel && leaveSel.match === m.id ? leaveSel.side : null;
+  const leaving = chosen || plan.leaving;
   const name = (t) => esc(m[`team${t}`].name);
-  const team = (t, n, win) => `<div class="r-team ${win ? 'win' : ''}"><span class="team-bar" style="--c:${m[`team${t}`].color}"></span>${name(t)}</div>`;
+  const tie = sA === sB;
+  const team = (t, mine, theirs) => `<div class="r-team ${mine > theirs ? 'win' : !tie ? 'lose' : ''}">
+      <span class="team-bar" style="--c:${m[`team${t}`].color}"></span>${name(t)}
+      ${mine > theirs ? '<small class="r-tag">Venceu</small>' : ''}</div>`;
+
+  let who;
+  if (leaving === 'both') {
+    const [t1, t2] = S.teams;
+    who = `<p><b>Empate com 2 times esperando: saem os dois.</b></p>
+      <p><b>Entram</b> ${esc(t1.name)} (${t1.players.map((id) => esc(pname(id))).join(', ')})
+        × ${esc(t2.name)} (${t2.players.map((id) => esc(pname(id))).join(', ')})</p>`;
+  } else if (leaving) {
+    const e = enteringInfo(m[`team${leaving}`].players);
+    const why = chosen ? '' : plan.tie ? ' <span class="muted">(empate: fica quem ganhou a anterior)</span>' : '';
+    who = `<p><b>Sai</b> ${name(leaving)} · <b>fica</b> ${name(otherSide(leaving))}${why}</p>
+      <p><b>Entram${e.team ? ` (${e.team})` : ''}:</b> ${e.list || '<span class="muted">quem saiu</span>'}${e.list ? e.extra : ''}</p>`;
+  } else {
+    who = '<p><b>Empate.</b> Escolha qual time sai:</p>';
+  }
+
+  const pick = (t) => `<button class="${chosen === t ? 'on' : ''}" data-act="leavePick" data-match="${m.id}" data-side="${t}" aria-pressed="${chosen === t}">Sai ${name(t)}</button>`;
+  const choice = plan.leaving
+    ? `<details class="r-override" ${chosen ? 'open' : ''}><summary>Trocar quem sai</summary>
+        <div class="r-choice">${pick('A')}${pick('B')}</div>
+        ${chosen ? `<button class="ghost small" data-act="leavePick" data-match="${m.id}" data-side="">Voltar para a regra</button>` : ''}
+      </details>`
+    : `<div class="r-choice">${pick('A')}${pick('B')}</div>`;
+
   return `<div class="card result next">
-    <p class="r-label">${m.endReason === 'goals' ? `Fim de jogo: chegou a ${S.settings.goalLimit} gols` : `Fim da partida ${m.number}`}</p>
-    <div class="r-score">${team('A', sA, sA > sB)}<span class="r-num">${sA}<span class="score-sep">–</span>${sB}</span>${team('B', sB, sB > sA)}</div>
+    <p class="r-label">${m.endReason === 'goals' ? `Fim de jogo: chegou a ${S.settings.goalLimit} gols` : `Fim da partida ${m.number}`}${tie ? ' · empate' : ''}</p>
+    <div class="r-score">${team('A', sA, sB)}<span class="r-num">${sA}<span class="score-sep">–</span>${sB}</span>${team('B', sB, sA)}</div>
     <div class="r-goals"><div>${goalLines(m, 'A')}</div><div>${goalLines(m, 'B')}</div></div>
-    <p class="r-next">${nextText(m)} <span class="muted">Quem sai vai para o fim da fila de próximo.</span></p>
+    <div class="r-next">${who}<small class="muted">Quem sai vai para o fim da fila de próximo.</small></div>
+    ${plan.leaving ? '' : choice}
     <div class="r-actions">
-      ${plan.leaving ? `<button class="primary big" data-act="next">${ICON.play}Chamar próxima partida</button>` : ''}
-      <div class="r-more">
-        <button class="${plan.leaving ? 'ghost small' : 'big'}" data-act="next" data-leaving="A">Sai ${name('A')}</button>
-        <button class="${plan.leaving ? 'ghost small' : 'big'}" data-act="next" data-leaving="B">Sai ${name('B')}</button>
-      </div>
+      <button class="primary big" data-act="next" ${chosen ? `data-leaving="${chosen}"` : ''} ${leaving ? '' : 'disabled'}>${ICON.play}Chamar próxima partida</button>
+      ${plan.leaving ? choice : ''}
       <div class="r-more">
         <button class="small" data-act="shareResult" data-id="${m.id}">${ICON.share}Mandar no grupo</button>
         <button class="ghost small" data-act="reopen" data-id="${m.id}">Reabrir partida</button>
@@ -794,6 +833,7 @@ function renderMatch() {
   const bump = lastScoreKey && lastScoreKey !== scoreKey && lastScoreKey.startsWith(`${m.id}:`);
   lastScoreKey = scoreKey;
   const status = { pending: 'Não começou', running: 'Rolando', paused: 'Pausada' }[m.status];
+  const prev = S.matches.find((x) => x.nextMatchId === m.id);
   const running = m.status === 'running';
   const mainBtn = running
     ? `<button class="btn-main dark" data-act="timer" data-a="pause">${ICON.pause}Pausar</button>`
@@ -810,6 +850,7 @@ function renderMatch() {
         <div id="clock" class="clock">00:00</div>
         <div id="clockSub" class="clock-sub"></div>
         <span class="status-tag">Partida ${m.number} · ${status}${S.settings.goalLimit ? ` · até ${S.settings.goalLimit} gols` : ''}</span>
+        ${prev && m.status === 'pending' ? `<div><button class="link-btn" data-act="shareResult" data-id="${prev.id}">${ICON.share}Mandar resultado da partida ${prev.number}</button></div>` : ''}
       </div>
       ${canEdit() ? `<div class="controls">
         ${mainBtn}
@@ -1789,7 +1830,7 @@ const actions = {
     const last = finishedMatches()[0];
     const r = await act('POST', `/api/matches/${last.id}/next`, d.leaving ? { leaving: d.leaving } : {}, { quiet: ['ALREADY_NEXT'] });
     if (r?.code === 'ALREADY_NEXT') toast(r.error, 'ok');
-    if (r?.ok) toast('Próxima partida montada!', 'ok');
+    if (r?.ok) { leaveSel = null; toast('Próxima partida montada!', 'ok'); }
   },
   subPick(d) {
     const same = subSel && subSel.team === d.team && subSel.player === (d.player || null);
@@ -1827,6 +1868,10 @@ const actions = {
   shareResult(d) {
     const m = S.matches.find((x) => x.id === d.id);
     if (m) shareText(resultText(m), 'Resultado copiado! Cole no grupo.');
+  },
+  leavePick(d) {
+    leaveSel = d.side ? { match: d.match, side: d.side } : null;
+    renderMatch();
   },
   toTop() { window.scrollTo({ top: 0, behavior: 'smooth' }); },
   teamCountStep(d) {

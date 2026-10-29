@@ -512,11 +512,21 @@ body.logged-out .top, body.logged-out main, body.logged-out .tabs, body.logged-o
 .result .r-label { font-size: .85rem; font-weight: 700; color: var(--accent); margin: 0 0 8px; }
 .r-score { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 10px; text-align: center; }
 .r-team { display: flex; flex-direction: column; align-items: center; gap: 6px; font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
-.r-team.win { color: var(--accent-hover); }
+.r-team.win { color: var(--accent-hover); font-size: 1.15rem; }
+.r-team.lose { color: var(--muted); font-weight: 600; }
+.r-tag { font-size: .75rem; font-weight: 700; color: #fff; background: var(--accent); border-radius: 999px; padding: 1px 8px; }
 .r-num { font-family: var(--font-display); font-weight: 700; font-size: 3.4rem; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .r-goals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 12px 0 4px; font-size: .88rem; color: var(--muted); }
 .r-goals > div:last-child { text-align: right; }
 .r-next { background: var(--surface-2); border-radius: 12px; padding: 10px 12px; margin: 12px 0 0; font-size: .95rem; }
+.r-next p { margin: 0 0 6px; }
+.r-goals b { color: var(--ink); font-weight: 600; }
+.r-choice { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.r-choice button { min-height: 52px; font-weight: 600; }
+.r-choice button.on { background: var(--danger-soft); border-color: var(--danger); color: var(--danger); }
+.r-override { margin-top: 2px; }
+.r-override summary { min-height: 44px; font-size: .92rem; }
+.r-override .ghost.small { margin-top: 6px; }
 .r-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
 .r-more { display: flex; flex-wrap: wrap; gap: 6px; }
 .r-more button { flex: 1 1 auto; }
