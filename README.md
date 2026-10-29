@@ -4,7 +4,8 @@ App web em Node.js para futebol amador. Funciona no celular, pode ser instalado 
 
 ## Funcionalidades
 
-- **Contas (celular + senha)**: para usar o app é preciso entrar. Quem se cadastra escolhe o próprio nome na lista de jogadores, ou cria o seu se não estiver nela.
+- **Contas (celular + senha)**: para usar o app é preciso entrar. No cadastro a pessoa informa a posição e o jogador dela já é criado com o nome da conta (se o organizador já tinha cadastrado alguém com o mesmo nome, a conta é ligada a ele).
+- **Convidados sem conta**: na aba Hoje, "+ Convidado" cria o jogador na hora e já marca presença (e põe na fila de avulsos se o dia já começou).
   - **Jogador**: acompanha placar e estatísticas ao vivo e confirma a própria presença.
   - **Organizador**: cuida da mesa (gols, cronômetro, times, presença, fila). Quem promove é o administrador.
   - **Administrador**: só você. Além de tudo acima, muda as regras, faz backups e gerencia as contas (promover, ligar ao jogador, criar nova senha, desativar).

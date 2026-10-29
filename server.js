@@ -338,7 +338,16 @@ function linkPlayer(db, user, b) {
   if (b.newPlayer) {
     const name = cleanStr(b.playerName || user.name, 40);
     const same = db.players.find((p) => p.active && p.name.toLowerCase() === name.toLowerCase());
-    if (same) throw new HttpError(409, 'PLAYER_EXISTS', `Já existe um jogador "${name}". Escolha seu nome na lista.`);
+    if (same) {
+      // A player with this exact name that nobody owns yet is this person
+      // (e.g. registered earlier by the organizer): link it.
+      if (db.users.some((u) => u.id !== user.id && u.active && u.playerId === same.id)) {
+        throw new HttpError(409, 'PLAYER_TAKEN', `Já existe um jogador "${name}" com conta. Use seu nome completo ou um apelido diferente.`);
+      }
+      if (b.position && !same.position) same.position = cleanPosition(b.position);
+      user.playerId = same.id;
+      return null;
+    }
     const player = { id: uid(), name, nickname: '', position: cleanPosition(b.position), rating: 3, active: true, createdAt: Date.now() };
     db.players.push(player);
     user.playerId = player.id;
@@ -364,7 +373,8 @@ app.post('/api/auth/register', json, async (req, res) => {
         throw new HttpError(409, 'PHONE_EXISTS', 'Este celular já tem conta. Toque em "Entrar".');
       }
       user = { id: uid(), name, phone, role: 'jogador', passwordHash: hash, playerId: null, active: true, createdAt: Date.now() };
-      created = linkPlayer(db, user, b);
+      // Every account gets its player right away (unless it picks one).
+      created = linkPlayer(db, user, b.playerId ? b : { ...b, newPlayer: b.newPlayer !== false });
       db.users.push(user);
       token = auth.createSession(db, user.id);
     });
@@ -617,13 +627,20 @@ app.post('/api/players', ...write, action((db, b) => {
     // Also blocks two devices registering the same player at the same time.
     throw new HttpError(409, 'PLAYER_EXISTS', `Já existe um jogador chamado "${fields.name}".`);
   }
+  let player = same;
   if (same) {
     Object.assign(same, fields, { active: true }); // reactivate and keep history
-    return { player: same, reactivated: true };
+  } else {
+    player = { id: uid(), ...fields, active: true, createdAt: Date.now() };
+    db.players.push(player);
   }
-  const player = { id: uid(), ...fields, active: true, createdAt: Date.now() };
-  db.players.push(player);
-  return { player };
+  // "+ Convidado": a guest without an account who showed up today.
+  if (b.present === true) {
+    const queued = markPresent(db, [player.id], b.date);
+    const formed = autoForm(db);
+    return { player, reactivated: Boolean(same), present: true, queued, formed: formed.map((t) => t.name) };
+  }
+  return { player, reactivated: Boolean(same) };
 }));
 
 app.put('/api/players/:id', ...write, action((db, b, req) => {
@@ -655,25 +672,34 @@ app.delete('/api/players/:id', ...write, action((db, b, req) => {
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const dayStarted = (db) => Boolean(activeMatch(db) || db.teams.length || db.queue.length);
 
+// Marks players present; after the day started they also join the queue.
+function markPresent(db, ids, date) {
+  const att = db.attendance;
+  if (!att.date && DATE_RE.test(date || '')) att.date = date;
+  const m = activeMatch(db);
+  const started = dayStarted(db);
+  const queued = [];
+  for (const id of ids) {
+    if (!getPlayer(db, id)?.active || att.present.includes(id)) continue;
+    att.present.push(id);
+    if (started && !isWaiting(db, id) && !(m && inMatch(m, id))) {
+      db.queue.push(id);
+      queued.push(id);
+    }
+  }
+  return queued;
+}
+
 // Body: { playerIds: [...], present: true|false, date: 'YYYY-MM-DD' }
 // Setting presence is idempotent (marking twice = same result). Players who
 // arrive after the day started go straight to the end of the loose queue.
 app.post('/api/attendance', ...write, action((db, b) => {
   const att = db.attendance;
-  if (!att.date && DATE_RE.test(b.date || '')) att.date = b.date;
   const ids = Array.isArray(b.playerIds) ? b.playerIds : [];
   const m = activeMatch(db);
-  const queued = [];
+  let queued = [];
   if (b.present) {
-    const started = dayStarted(db);
-    for (const id of ids) {
-      if (!getPlayer(db, id)?.active || att.present.includes(id)) continue;
-      att.present.push(id);
-      if (started && !isWaiting(db, id) && !(m && inMatch(m, id))) {
-        db.queue.push(id);
-        queued.push(id);
-      }
-    }
+    queued = markPresent(db, ids, b.date);
   } else {
     const gone = ids.filter((id) => !(m && inMatch(m, id)));
     att.present = att.present.filter((id) => !gone.includes(id));

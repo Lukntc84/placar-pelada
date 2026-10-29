@@ -202,7 +202,7 @@ test('admin: seed fictitious players, remove only them, then reset for launch', 
     await req('POST', '/api/attendance', { playerIds: [real, demoIds[2]], present: true });
 
     // Organizers cannot do this; a wrong confirmation is refused.
-    await anon('POST', '/api/auth/register', { name: 'Org', phone: '51911112222', password: 'abcdef' });
+    await anon('POST', '/api/auth/register', { name: 'Org', phone: '51911112222', password: 'abcdef', newPlayer: false });
     const asOrg = await login('51911112222', 'abcdef');
     assert.equal((await asOrg('POST', '/api/admin/seed', {})).status, 403);
     assert.equal((await req('POST', '/api/admin/reset', { scope: 'all', confirm: 'nao' })).status, 400);
@@ -222,5 +222,35 @@ test('admin: seed fictitious players, remove only them, then reset for launch', 
     assert.equal((await req('GET', '/api/users')).users.length, 2); // accounts kept
     const list = (await req('GET', '/api/backups')).backups.map((b) => b.name);
     assert.ok(list.includes(all.backup) && list.includes(demo.backup));
+  } finally { await stop(); }
+});
+
+test('sign-up creates the player (or links an unowned one); guest added on the spot is present', async () => {
+  const { req, anon, stop } = await startServer();
+  try {
+    const reg = await anon('POST', '/api/auth/register', { name: 'Zé Novo', phone: '61911110000', password: 'abcdef', position: 'GOL' });
+    assert.equal(reg.ok, true, reg.error);
+    let s = await req('GET', '/api/state');
+    const ze = s.players.find((p) => p.id === reg.user.playerId);
+    assert.equal(ze.name, 'Zé Novo');
+    assert.equal(ze.position, 'GOL');
+
+    // Organizer created "Tico" before; Tico signs up and is linked to it.
+    const tico = (await req('POST', '/api/players', { name: 'Tico' })).player.id;
+    const reg2 = await anon('POST', '/api/auth/register', { name: 'tico', phone: '61922220000', password: 'abcdef' });
+    assert.equal(reg2.user.playerId, tico);
+    // Same name already owned by an account: refused with a clear message.
+    const reg3 = await anon('POST', '/api/auth/register', { name: 'Tico', phone: '61933330000', password: 'abcdef' });
+    assert.equal(reg3.code, 'PLAYER_TAKEN');
+
+    // Guest without account: created and marked present; after the day started, queued.
+    const g1 = await req('POST', '/api/players', { name: 'Convidado Um', present: true, date: '2026-10-28' });
+    assert.equal(g1.present, true);
+    s = await req('GET', '/api/state');
+    assert.ok(s.attendance.present.includes(g1.player.id));
+    assert.deepEqual(s.queue, []); // day not started yet
+    await req('POST', '/api/matches', { teams: [{ players: [ze.id] }, { players: [tico] }] });
+    const g2 = await req('POST', '/api/players', { name: 'Convidado Dois', present: true });
+    assert.deepEqual(g2.queued, [g2.player.id]);
   } finally { await stop(); }
 });

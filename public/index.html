@@ -41,12 +41,22 @@
       <form id="registerForm" autocomplete="on" novalidate hidden>
         <label>Seu nome<input name="name" maxlength="40" autocomplete="name" placeholder="Como te chamam na pelada" required></label>
         <label>Celular<input name="phone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="(11) 98765-4321" required></label>
+        <label>Posição em que joga
+          <select name="position">
+            <option value="">Linha (qualquer posição)</option>
+            <option value="GOL">Goleiro</option>
+            <option value="ZAG">Zagueiro</option>
+            <option value="LAT">Lateral</option>
+            <option value="MEI">Meio-campo</option>
+            <option value="ATA">Atacante</option>
+          </select>
+        </label>
         <label>Crie uma senha <small>(mínimo 6 caracteres)</small>
           <span class="pwd"><input name="password" type="password" autocomplete="new-password" minlength="6" required>
           <button type="button" class="ghost small" data-showpwd>mostrar</button></span>
         </label>
         <button type="submit" class="primary big">Criar conta</button>
-        <p class="muted center">Depois você escolhe seu nome na lista de jogadores.</p>
+        <p class="muted center">Seu jogador é criado com o seu nome.</p>
       </form>
 
       <p id="authError" class="auth-error" role="alert"></p>
@@ -73,7 +83,10 @@
       <div class="card">
         <div class="row-between">
           <h2>Quem veio hoje</h2>
-          <button class="ghost small" data-act="newDay">Novo dia</button>
+          <span class="acts">
+            <button class="small" data-act="guestAdd">+ Convidado</button>
+            <button class="ghost small" data-act="newDay">Novo dia</button>
+          </span>
         </div>
         <div id="dayBanner"></div>
         <p id="presenceSummary" class="muted"></p>

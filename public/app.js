@@ -97,6 +97,7 @@ const today = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 const isPresent = (id) => S.attendance.present.includes(id);
+const dayStartedClient = () => Boolean(currentMatch() || S.teams.length || S.queue.length);
 const ROLE_LABEL = { admin: 'Administrador', organizador: 'Organizador', jogador: 'Jogador' };
 const canEdit = () => Boolean(ME) && (ME.role === 'organizador' || ME.role === 'admin');
 const isAdmin = () => Boolean(ME) && ME.role === 'admin';
@@ -270,11 +271,13 @@ $('#registerForm').addEventListener('submit', async (e) => {
   if (!f.name.value.trim()) { $('#authError').textContent = 'Informe seu nome.'; return; }
   if (f.phone.value.replace(/\D/g, '').length < 10) { $('#authError').textContent = 'Celular inválido. Use DDD + número.'; return; }
   if (f.password.value.length < 6) { $('#authError').textContent = 'A senha precisa ter pelo menos 6 caracteres.'; return; }
-  const user = await submitAuth('/api/auth/register', { name: f.name.value, phone: f.phone.value, password: f.password.value }, f.querySelector('[type=submit]'));
+  const user = await submitAuth('/api/auth/register', {
+    name: f.name.value, phone: f.phone.value, password: f.password.value, position: f.position.value, newPlayer: true,
+  }, f.querySelector('[type=submit]'));
   if (user) {
     f.reset();
     startApp(user);
-    setTimeout(linkMeModal, 600); // "who are you in the pelada?"
+    toast(`Bem-vindo, ${user.name.split(' ')[0]}! Seu jogador já está cadastrado.`, 'ok');
   }
 });
 
@@ -1680,6 +1683,40 @@ const actions = {
     if (!confirm(`Tirar ${name} da lista de confirmados?${isPresent(d.player) ? ' Ele também já está marcado como presente: desmarque em "Quem veio hoje" se não veio.' : ''}`)) return;
     const r = await act('POST', '/api/rsvp/answer', { playerId: d.player, going: null });
     if (r?.ok) toast(`${name} saiu da lista.`, 'ok');
+  },
+  guestAdd() {
+    openModal(`
+      <h3>Adicionar convidado</h3>
+      <p class="muted">Para quem veio hoje sem conta no app. Ele já entra como presente${dayStartedClient() ? ' e vai para a fila de avulsos' : ''}.</p>
+      <form id="guestForm" class="stack" autocomplete="off">
+        <label>Nome<input name="name" maxlength="40" required></label>
+        <div class="form-grid">
+          <label>Posição
+            <select name="position">
+              <option value="">Linha</option><option value="GOL">Goleiro</option><option value="ZAG">Zagueiro</option>
+              <option value="LAT">Lateral</option><option value="MEI">Meio-campo</option><option value="ATA">Atacante</option>
+            </select>
+          </label>
+          <label>Nível
+            <select name="rating"><option value="1">1</option><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option><option value="5">5</option></select>
+          </label>
+        </div>
+        <button type="submit" class="primary big">Adicionar e marcar presença</button>
+      </form>
+      <button class="ghost wide" data-act="closeModal">Cancelar</button>`);
+    const form = $('#guestForm');
+    form.name.focus();
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!form.name.value.trim()) return toast('Informe o nome.', 'warn');
+      const r = await act('POST', '/api/players', {
+        name: form.name.value, position: form.position.value, rating: Number(form.rating.value), present: true, date: today(),
+      });
+      if (r?.ok) {
+        closeModal();
+        toast(r.formed?.length ? `${r.player.name} chegou e fechou o ${r.formed.join(', ')}!` : r.queued?.length ? `${r.player.name} entrou na fila de avulsos.` : `${r.player.name} marcado como presente.`, 'ok');
+      }
+    });
   },
   async seedDemo() {
     const r = await act('POST', '/api/admin/seed', { count: 20 });
