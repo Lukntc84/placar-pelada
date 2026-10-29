@@ -639,3 +639,6 @@ body.logged-out .top, body.logged-out main, body.logged-out .tabs, body.logged-o
 @media (max-width: 380px) {
   .range-custom { grid-template-columns: minmax(0, 1fr); }
 }
+.pr-sum { margin: 2px 0 0; font-size: 1rem; }
+.pr-sub { margin: 10px 0 0; font-size: .9rem; }
+.my-line { margin: 10px 0 0; }

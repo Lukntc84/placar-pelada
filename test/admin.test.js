@@ -44,8 +44,8 @@ test('accounts: login required, sign-up as jogador, roles enforced', async () =>
     assert.equal((await req('PUT', `/api/users/${anaUser.id}`, { role: 'organizador' })).ok, true);
     assert.equal((await asAna('POST', '/api/players', { name: 'Caio' })).ok, true);
     assert.equal((await asAna('PUT', '/api/settings', { goalLimit: 3 })).status, 403);
-    // Nobody else can become admin; the admin account cannot be demoted.
-    assert.equal((await req('PUT', `/api/users/${anaUser.id}`, { role: 'admin' })).status, 400);
+    // Unknown roles are refused; the owner's admin account cannot be demoted.
+    assert.equal((await req('PUT', `/api/users/${anaUser.id}`, { role: 'chefe' })).status, 400);
     assert.equal((await req('PUT', `/api/users/${users[0].id}`, { role: 'jogador' })).status, 403);
 
     // Goals are signed with the account name, not a client-provided one.
@@ -268,5 +268,58 @@ test('a player can switch between goalkeeper and line on their own', async () =>
     assert.equal((await me('POST', '/api/auth/goalkeeper', { goalkeeper: true })).already, true);
     // Other player fields stay with the organizer.
     assert.equal((await me('PUT', `/api/players/${reg.user.playerId}`, { name: 'X' })).status, 403);
+  } finally { await stop(); }
+});
+
+test('stars start at 3 and only an admin changes them', async () => {
+  const { req, anon, login, stop } = await startServer();
+  try {
+    await anon('POST', '/api/auth/register', { name: 'Orga', phone: '61955550000', password: 'abcdef', newPlayer: false });
+    const users = (await req('GET', '/api/users')).users;
+    await req('PUT', `/api/users/${users.find((u) => u.name === 'Orga').id}`, { role: 'organizador' });
+    const org = await login('61955550000', 'abcdef');
+    const p = (await org('POST', '/api/players', { name: 'Craque', rating: 5 })).player;
+    assert.equal(p.rating, 3);
+    assert.equal((await org('PUT', `/api/players/${p.id}`, { name: 'Craque', rating: 1 })).player.rating, 3);
+    assert.equal((await req('PUT', `/api/players/${p.id}`, { name: 'Craque', rating: 5 })).player.rating, 5);
+    // An organizer editing the name keeps the admin's rating.
+    assert.equal((await org('PUT', `/api/players/${p.id}`, { name: 'Craque Novo' })).player.rating, 5);
+  } finally { await stop(); }
+});
+
+test('admin grants admin to others; the owner account is protected', async () => {
+  const { req, anon, login, stop } = await startServer();
+  try {
+    await anon('POST', '/api/auth/register', { name: 'Vice', phone: '61966660000', password: 'abcdef', newPlayer: false });
+    let users = (await req('GET', '/api/users')).users;
+    const owner = users.find((u) => u.owner);
+    const vice = users.find((u) => u.name === 'Vice');
+    assert.ok(owner && owner.role === 'admin');
+    assert.equal((await req('PUT', `/api/users/${vice.id}`, { role: 'admin' })).user.role, 'admin');
+    const asVice = await login('61966660000', 'abcdef');
+    assert.equal((await asVice('GET', '/api/users')).ok, true); // admin powers
+    assert.equal((await asVice('PUT', '/api/users/' + owner.id, { role: 'jogador' })).status, 403);
+    assert.equal((await asVice('PUT', '/api/users/' + owner.id, { active: false })).status, 403);
+    assert.equal((await asVice('POST', `/api/users/${owner.id}/password`, { password: 'trocada1' })).status, 403);
+    // The owner can remove the admin role again.
+    assert.equal((await req('PUT', `/api/users/${vice.id}`, { role: 'organizador' })).user.role, 'organizador');
+    users = (await req('GET', '/api/users')).users;
+    assert.equal(users.filter((u) => u.role === 'admin').length, 1);
+  } finally { await stop(); }
+});
+
+test('presence is kept per day for the attendance chart', async () => {
+  const { req, stop } = await startServer();
+  try {
+    const a = (await req('POST', '/api/players', { name: 'Dia1' })).player.id;
+    const b = (await req('POST', '/api/players', { name: 'Dia2' })).player.id;
+    await req('POST', '/api/attendance', { playerIds: [a, b], present: true, date: '2026-10-21' });
+    await req('POST', '/api/day/reset', { date: '2026-10-28' });
+    await req('POST', '/api/attendance', { playerIds: [a], present: true, date: '2026-10-28' });
+    const s = await req('GET', '/api/state');
+    assert.deepEqual(s.presenceLog['2026-10-21'].sort(), [a, b].sort());
+    assert.deepEqual(s.presenceLog['2026-10-28'], [a]);
+    await req('POST', '/api/attendance', { playerIds: [a], present: false });
+    assert.equal((await req('GET', '/api/state')).presenceLog['2026-10-28'], undefined);
   } finally { await stop(); }
 });

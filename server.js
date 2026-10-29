@@ -229,6 +229,7 @@ function publicState() {
     queue: db.queue,
     teams: db.teams,
     attendance: db.attendance,
+    presenceLog: db.presenceLog,
     rsvp: db.rsvp,
     matches: db.matches,
   };
@@ -289,6 +290,15 @@ function sendError(res, err) {
   return res.status(500).json({ ok: false, code: 'INTERNAL', error: 'Erro interno no servidor.' });
 }
 
+// Keeps one presence list per day, for the attendance chart.
+function syncPresenceLog(db) {
+  const { date, present } = db.attendance;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) return;
+  db.presenceLog ||= {};
+  if (present.length) db.presenceLog[date] = [...present];
+  else delete db.presenceLog[date];
+}
+
 function action(handler) {
   return (req, res) => {
     // Keys are scoped per account so two users can never collide.
@@ -300,6 +310,7 @@ function action(handler) {
     try {
       const body = store.transaction((db) => {
         const out = { ok: true, ...(handler(db, req.body || {}, req) || {}) };
+        syncPresenceLog(db);
         if (key) {
           pruneIdem(db);
           const { match, ...small } = out; // clients get the match through the live state
@@ -474,22 +485,33 @@ app.post('/api/auth/password', json, asPlayer, async (req, res) => {
   }
 });
 
+// The owner is the account of ADMIN_PHONE (the first admin when it is not
+// set). Other admins are granted in the app and can be removed; the owner
+// can't be demoted, deactivated or have the password reset by them.
+function ownerOf(db) {
+  const phone = auth.normalizePhone(process.env.ADMIN_PHONE);
+  return (phone && db.users.find((u) => u.phone === phone))
+    || db.users.filter((u) => u.role === 'admin').sort((a, b) => a.createdAt - b.createdAt)[0];
+}
+
 // Admin: accounts.
 app.get('/api/users', auth.requireRole('admin'), (req, res) => {
-  const users = store.get().users
-    .map(auth.publicUser)
-    .sort((a, b) => (b.role === 'admin') - (a.role === 'admin') || a.name.localeCompare(b.name, 'pt-BR'));
+  const db = store.get();
+  const owner = ownerOf(db);
+  const users = db.users
+    .map((u) => ({ ...auth.publicUser(u), owner: Boolean(owner && u.id === owner.id) }))
+    .sort((a, b) => b.owner - a.owner || (b.role === 'admin') - (a.role === 'admin') || a.name.localeCompare(b.name, 'pt-BR'));
   res.json({ ok: true, users });
 });
 
 app.put('/api/users/:id', ...adminOnly, action((db, b, req) => {
   const u = db.users.find((x) => x.id === req.params.id);
   if (!u) throw new HttpError(404, 'NOT_FOUND', 'Conta não encontrada.');
-  if (u.role === 'admin' && (b.role !== undefined || b.active !== undefined)) {
-    throw new HttpError(403, 'FORBIDDEN', 'A conta de administrador não pode ser alterada aqui.');
+  if (u === ownerOf(db) && (b.role !== undefined || b.active !== undefined)) {
+    throw new HttpError(403, 'FORBIDDEN', 'A conta do dono do app não pode ser alterada.');
   }
   if (b.role !== undefined) {
-    if (b.role !== 'jogador' && b.role !== 'organizador') throw bad('Papel inválido.');
+    if (!['jogador', 'organizador', 'admin'].includes(b.role)) throw bad('Papel inválido.');
     u.role = b.role;
   }
   if (b.active !== undefined) {
@@ -511,6 +533,8 @@ app.post('/api/users/:id/password', ...adminOnly, async (req, res) => {
     store.transaction((db) => {
       const u = db.users.find((x) => x.id === req.params.id);
       if (!u) throw new HttpError(404, 'NOT_FOUND', 'Conta não encontrada.');
+      const owner = ownerOf(db);
+      if (u === owner && req.user.id !== owner.id) throw new HttpError(403, 'FORBIDDEN', 'Só o dono do app troca a própria senha.');
       u.passwordHash = hash;
       auth.revokeSessions(db, u.id);
     });
@@ -525,7 +549,7 @@ app.post('/api/users/:id/password', ...adminOnly, async (req, res) => {
 async function ensureAdmin() {
   const phone = auth.normalizePhone(process.env.ADMIN_PHONE);
   const password = process.env.ADMIN_PASSWORD || '';
-  const existing = store.get().users.find((u) => u.role === 'admin');
+  const existing = ownerOf(store.get());
   const reset = process.env.ADMIN_RESET_PASSWORD === '1';
   if (existing && !reset) return;
   if (!phone || password.length < 6) {
@@ -534,7 +558,7 @@ async function ensureAdmin() {
   }
   const hash = await auth.hashPassword(password);
   store.transaction((db) => {
-    let admin = db.users.find((u) => u.role === 'admin') || db.users.find((u) => u.phone === phone);
+    let admin = db.users.find((u) => u.phone === phone) || ownerOf(db);
     if (!admin) {
       admin = { id: uid(), name: 'Administrador', phone, role: 'admin', passwordHash: hash, playerId: null, active: true, createdAt: Date.now() };
       db.users.push(admin);
@@ -622,19 +646,22 @@ app.put('/api/settings', ...adminOnly, action((db, b) => {
 
 // -------------------------------------------------------------- players
 
-function playerFields(b) {
+// Rating (stars) starts at 3 and only the admin changes it; for anyone
+// else `keep` is used (the current rating, or 3 for a new player).
+function playerFields(b, user, keep = 3) {
   const name = cleanStr(b.name, 40);
   if (!name) throw bad('Informe o nome do jogador.');
   return {
     name,
     nickname: cleanStr(b.nickname, 20),
     position: cleanPosition(b.position),
-    rating: cleanInt(b.rating, 1, 5, 3),
+    rating: user && user.role === 'admin' ? cleanInt(b.rating, 1, 5, keep) : keep,
   };
 }
 
-app.post('/api/players', ...write, action((db, b) => {
-  const fields = playerFields(b);
+app.post('/api/players', ...write, action((db, b, req) => {
+  const existing = db.players.find((p) => p.name.toLowerCase() === cleanStr(b.name, 40).toLowerCase());
+  const fields = playerFields(b, req.user, existing ? existing.rating : 3);
   const same = db.players.find((p) => p.name.toLowerCase() === fields.name.toLowerCase());
   if (same && same.active) {
     // Also blocks two devices registering the same player at the same time.
@@ -659,7 +686,7 @@ app.post('/api/players', ...write, action((db, b) => {
 app.put('/api/players/:id', ...write, action((db, b, req) => {
   const p = getPlayer(db, req.params.id);
   if (!p) throw new HttpError(404, 'NOT_FOUND', 'Jogador não encontrado.');
-  const fields = playerFields(b);
+  const fields = playerFields(b, req.user, p.rating);
   const clash = db.players.find((x) => x.id !== p.id && x.active && x.name.toLowerCase() === fields.name.toLowerCase());
   if (clash) throw new HttpError(409, 'PLAYER_EXISTS', `Já existe um jogador chamado "${fields.name}".`);
   Object.assign(p, fields);

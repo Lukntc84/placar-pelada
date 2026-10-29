@@ -407,7 +407,7 @@ function renderUsers() {
   const linked = new Set(USERS.filter((u) => u.playerId && u.active).map((u) => u.playerId));
   const players = S.players.filter((p) => p.active).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   $('#setUsers').innerHTML = USERS.length ? `<ul class="users">${USERS.map((u) => {
-    const isOwner = u.role === 'admin';
+    const isOwner = u.owner;
     const playerOpts = `<option value="">— sem jogador —</option>` + players
       .filter((p) => p.id === u.playerId || !linked.has(p.id))
       .map((p) => `<option value="${p.id}" ${p.id === u.playerId ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
@@ -415,15 +415,16 @@ function renderUsers() {
       <div class="u-head"><b>${esc(u.name)}</b> <small class="muted">${esc(u.phone)}</small>
         ${u.active ? '' : '<span class="tag">desativada</span>'}</div>
       <div class="u-controls">
-        ${isOwner ? '<span class="tag owner">Administrador</span>' : `<select data-user-role="${u.id}" aria-label="Papel de ${esc(u.name)}">
+        ${isOwner ? `<span class="tag owner">${u.id === ME.id ? 'Dono do app (você)' : 'Dono do app'}</span>` : `<select data-user-role="${u.id}" aria-label="Papel de ${esc(u.name)}">
           <option value="jogador" ${u.role === 'jogador' ? 'selected' : ''}>Jogador</option>
           <option value="organizador" ${u.role === 'organizador' ? 'selected' : ''}>Organizador</option>
+          <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Administrador</option>
         </select>`}
         <select data-user-player="${u.id}" aria-label="Jogador de ${esc(u.name)}">${playerOpts}</select>
       </div>
       <div class="row-btns">
         <button class="ghost small" data-act="userPwd" data-id="${u.id}">Criar nova senha</button>
-        ${isOwner ? '' : `<button class="ghost small ${u.active ? 'danger-text' : ''}" data-act="userActive" data-id="${u.id}" data-v="${u.active ? '0' : '1'}">${u.active ? 'Desativar' : 'Reativar'}</button>`}
+        ${isOwner || u.id === ME.id ? '' : `<button class="ghost small ${u.active ? 'danger-text' : ''}" data-act="userActive" data-id="${u.id}" data-v="${u.active ? '0' : '1'}">${u.active ? 'Desativar' : 'Reativar'}</button>`}
       </div>
     </li>`;
   }).join('')}</ul>` : '<p class="muted">Nenhuma conta ainda.</p>';
@@ -1378,6 +1379,7 @@ const POS = { GOL: 'Goleiro', ZAG: 'Zagueiro', LAT: 'Lateral', MEI: 'Meio', ATA:
 
 let playerQuery = '';
 function renderPlayers() {
+  $('#ratingField').hidden = !isAdmin();
   const all = S.players.filter((p) => p.active).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   const q = playerQuery.trim().toLowerCase();
   const active = q ? all.filter((p) => `${p.name} ${p.nickname}`.toLowerCase().includes(q)) : all;
@@ -1763,8 +1765,42 @@ function goalsLine(hist) {
     <p class="lc-caption" id="lcCaption" data-days='${esc(JSON.stringify(days))}'><b>${dmy(last.d)}</b>: ${plural(last.goals, 'gol', 'gols')} em ${plural(last.matches, 'partida', 'partidas')} <span class="muted">· toque num ponto para ver outro dia</span></p>`;
 }
 
+// Who came on each pelada day in [since, until): the presence list saved
+// for that day, plus anyone who played a match that day (covers days from
+// before the list was saved).
+function presenceStats(since, until) {
+  const days = new Map(); // ymd -> Set(playerId)
+  const add = (d, ids) => {
+    const at = dayStart(d);
+    if (at < since || at >= until) return;
+    if (!days.has(d)) days.set(d, new Set());
+    ids.forEach((id) => { if (player(id)) days.get(d).add(id); });
+  };
+  for (const [d, ids] of Object.entries(S.presenceLog || {})) add(d, ids);
+  for (const m of finishedMatches()) add(ymdOf(m.finishedAt), [...sidePlayers(m, 'A'), ...sidePlayers(m, 'B')]);
+  const count = new Map();
+  for (const set of days.values()) for (const id of set) count.set(id, (count.get(id) || 0) + 1);
+  const total = [...days.values()].reduce((n, set) => n + set.size, 0);
+  return { days: days.size, avg: days.size ? total / days.size : 0, count };
+}
+
+function presenceCard(pr) {
+  if (!pr.days) return '<p class="muted">Nenhum dia de pelada nesse período.</p>';
+  const rows = [...pr.count].map(([id, n]) => ({ id, n }))
+    .sort((x, y) => y.n - x.n || pname(x.id).localeCompare(pname(y.id))).slice(0, 5);
+  return `<p class="pr-sum"><b>${plural(pr.days, 'dia', 'dias')} de pelada</b> · média de ${pr.avg.toFixed(1).replace('.', ',').replace(',0', '')} presentes por dia</p>
+    <p class="muted pr-sub">Quem mais veio (dias presentes):</p>
+    <ol class="hbars">${rows.map((r) => `<li>
+      <button class="hb" data-act="profile" data-player="${r.id}" aria-label="${esc(pname(r.id))}: veio em ${r.n} de ${pr.days} dias">
+        <span class="hb-name">${esc(pname(r.id))}</span>
+        <span class="hb-track"><span class="hb-bar" style="width:${Math.max(4, Math.round((r.n / pr.days) * 100))}%"></span></span>
+        <b class="hb-val">${r.n}</b>
+      </button></li>`).join('')}</ol>
+    <p class="muted pr-sub">A barra cheia é quem veio em todos os ${plural(pr.days, 'dia', 'dias')}.</p>`;
+}
+
 // The logged-in player's numbers in the period.
-function myCard(rows) {
+function myCard(rows, presence) {
   if (!ME || !ME.playerId || !player(ME.playerId)) return '';
   const r = rows.find((x) => x.id === ME.playerId);
   const streak = playerProfile(ME.playerId).current;
@@ -1780,6 +1816,7 @@ function myCard(rows) {
       <div><b>${r.a}</b><small>${r.a === 1 ? 'passe' : 'passes'}</small></div>
       <div><b>${pct}%</b><small>vitórias</small></div>
     </div>
+    ${presence && presence.days ? `<p class="my-line">Veio em <b>${presence.count.get(ME.playerId) || 0} de ${plural(presence.days, 'dia', 'dias')}</b> de pelada</p>` : ''}
     ${streak >= 2 ? `<p class="my-streak">${streak} vitórias seguidas</p>` : ''}
     <button class="ghost small" data-act="profile" data-player="${ME.playerId}">Ver meu perfil completo</button>
   </section>`;
@@ -1793,6 +1830,7 @@ function renderStats() {
   const hist = finishedMatches().filter((m) => m.finishedAt >= since && m.finishedAt < until);
   const goals = hist.reduce((n, m) => n + live(m).length, 0);
   const metric = { g: 'Gols', a: 'Passes', v: 'Vitórias' };
+  const presence = presenceStats(since, until);
   $('#statsBox').innerHTML = `
     <section class="card">
       <div class="kpis">
@@ -1801,7 +1839,7 @@ function renderStats() {
         <div><b>${hist.length ? (goals / hist.length).toFixed(1).replace('.', ',') : '0'}</b><small>gols por partida</small></div>
       </div>
     </section>
-    ${myCard(rows)}
+    ${myCard(rows, presence)}
     <section class="card">
       <div class="row-between"><h2>Destaques</h2>
         <div class="seg" role="group" aria-label="Destaque por">${Object.entries(metric).map(([k, label]) =>
@@ -1812,6 +1850,10 @@ function renderStats() {
     <section class="card">
       <h2>Gols por dia de pelada</h2>
       ${goalsLine(hist)}
+    </section>
+    <section class="card">
+      <h2>Presença</h2>
+      ${presenceCard(presence)}
     </section>
     <div class="row-btns">
       <button class="primary" data-act="shareSummary">${ICON.share}Resumo para o WhatsApp</button>
@@ -2206,9 +2248,9 @@ const actions = {
               <option value="">Linha</option><option value="GOL">Goleiro</option>
             </select>
           </label>
-          <label>Nível
+          ${isAdmin() ? `<label>Nível
             <select name="rating"><option value="1">1</option><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option><option value="5">5</option></select>
-          </label>
+          </label>` : ''}
         </div>
         <button type="submit" class="primary big">Adicionar e marcar presença</button>
       </form>
@@ -2219,7 +2261,7 @@ const actions = {
       e.preventDefault();
       if (!form.name.value.trim()) return toast('Informe o nome.', 'warn');
       const r = await act('POST', '/api/players', {
-        name: form.name.value, position: form.position.value, rating: Number(form.rating.value), present: true, date: today(),
+        name: form.name.value, position: form.position.value, rating: form.rating ? Number(form.rating.value) : 3, present: true, date: today(),
       });
       if (r?.ok) {
         closeModal();

@@ -23,6 +23,7 @@ function empty() {
     teams: [], // complete/incomplete teams waiting to play, in order
     matches: [],
     attendance: { date: null, present: [] }, // players present today
+    presenceLog: {}, // 'YYYY-MM-DD' -> players present that day (attendance chart)
     rsvp: { date: null, open: false, yes: [], no: [] }, // confirmation by link
     users: [], // accounts (phone + password hash + role)
     sessions: {}, // sha256(token) -> { userId, createdAt }
