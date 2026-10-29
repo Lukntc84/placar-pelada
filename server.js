@@ -442,6 +442,19 @@ app.post('/api/auth/link', json, asPlayer, action((db, b, req) => {
   return { user: auth.publicUser(user), created: Boolean(created) };
 }));
 
+// A player says whether they play in goal (e.g. a goalkeeper who wants to
+// play on the line). Only this flag; the rest of the player stays with the
+// organizer.
+app.post('/api/auth/goalkeeper', json, asPlayer, action((db, b, req) => {
+  const user = db.users.find((u) => u.id === req.user.id);
+  const p = user && getPlayer(db, user.playerId);
+  if (!p) throw new HttpError(404, 'NO_PLAYER', 'Sua conta ainda não tem jogador.');
+  const position = b.goalkeeper ? 'GOL' : p.position === 'GOL' ? '' : p.position;
+  if (p.position === position) return { already: true, player: p };
+  p.position = position;
+  return { player: p };
+}));
+
 app.post('/api/auth/password', json, asPlayer, async (req, res) => {
   try {
     const b = req.body || {};

@@ -23,43 +23,50 @@
         <h1>Placar da Pelada</h1>
         <p>Gols, times e fila de próximos, ao vivo para todo mundo.</p>
       </div>
-      <div class="auth-tabs" role="tablist">
-        <button type="button" data-auth="login" class="on" role="tab">Entrar</button>
-        <button type="button" data-auth="register" role="tab">Criar conta</button>
-      </div>
-
       <form id="loginForm" autocomplete="on" novalidate>
-        <label>Celular<input name="phone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="(11) 98765-4321" required></label>
+        <h2 class="auth-title">Entrar</h2>
+        <label>Celular com DDD<input name="phone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="(11) 98765-4321" required>
+          <span class="field-error" data-err="phone" role="alert"></span></label>
         <label>Senha
           <span class="pwd"><input name="password" type="password" autocomplete="current-password" required>
-          <button type="button" class="ghost small" data-showpwd>mostrar</button></span>
+          <button type="button" class="ghost" data-showpwd>Mostrar</button></span>
+          <span class="field-error" data-err="password" role="alert"></span>
         </label>
+        <p class="auth-error" data-err="form" role="alert"></p>
         <button type="submit" class="primary big">Entrar</button>
-        <p class="muted center">Esqueceu a senha? Peça ao administrador para criar uma nova.</p>
+        <p class="muted center">Esqueceu a senha? Peça ao organizador da pelada para criar uma nova.</p>
+        <div class="auth-switch">
+          <span>Primeira vez aqui?</span>
+          <button type="button" class="big" data-auth="register">Criar minha conta</button>
+        </div>
       </form>
 
       <form id="registerForm" autocomplete="on" novalidate hidden>
-        <label>Seu nome<input name="name" maxlength="40" autocomplete="name" placeholder="Como te chamam na pelada" required></label>
-        <label>Celular<input name="phone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="(11) 98765-4321" required></label>
-        <label>Posição em que joga
-          <select name="position">
-            <option value="">Linha (qualquer posição)</option>
-            <option value="GOL">Goleiro</option>
-            <option value="ZAG">Zagueiro</option>
-            <option value="LAT">Lateral</option>
-            <option value="MEI">Meio-campo</option>
-            <option value="ATA">Atacante</option>
-          </select>
+        <h2 class="auth-title">Criar conta</h2>
+        <label>Seu nome<input name="name" maxlength="40" autocomplete="name" placeholder="Como te chamam na pelada" required>
+          <span class="field-error" data-err="name" role="alert"></span></label>
+        <label>Celular com DDD<input name="phone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="(11) 98765-4321" required>
+          <span class="field-error" data-err="phone" role="alert"></span></label>
+        <fieldset class="gk-choice">
+          <legend>Você joga no gol?</legend>
+          <div class="big-choice">
+            <button type="button" class="on" data-gk="0" aria-pressed="true">Não</button>
+            <button type="button" data-gk="1" aria-pressed="false">Sim</button>
+          </div>
+          <small>Dá para mudar depois em Minha conta.</small>
+        </fieldset>
+        <label>Crie uma senha <small>Pelo menos 6 letras ou números</small>
+          <span class="pwd"><input name="password" type="text" autocomplete="new-password" minlength="6" autocapitalize="off" spellcheck="false" required>
+          <button type="button" class="ghost" data-showpwd>Esconder</button></span>
+          <span class="field-error" data-err="password" role="alert"></span>
         </label>
-        <label>Crie uma senha <small>(mínimo 6 caracteres)</small>
-          <span class="pwd"><input name="password" type="password" autocomplete="new-password" minlength="6" required>
-          <button type="button" class="ghost small" data-showpwd>mostrar</button></span>
-        </label>
-        <button type="submit" class="primary big">Criar conta</button>
-        <p class="muted center">Seu jogador é criado com o seu nome.</p>
+        <p class="auth-error" data-err="form" role="alert"></p>
+        <button type="submit" class="primary big">Criar minha conta</button>
+        <div class="auth-switch">
+          <span>Já tem conta?</span>
+          <button type="button" class="big" data-auth="login">Entrar</button>
+        </div>
       </form>
-
-      <p id="authError" class="auth-error" role="alert"></p>
     </div>
   </div>
 
@@ -162,14 +169,10 @@
         <div class="form-grid">
           <label>Nome<input name="name" maxlength="40" required></label>
           <label>Apelido<input name="nickname" maxlength="20"></label>
-          <label>Posição
+          <label>Joga no gol?
             <select name="position">
-              <option value="">—</option>
-              <option value="GOL">Goleiro</option>
-              <option value="ZAG">Zagueiro</option>
-              <option value="LAT">Lateral</option>
-              <option value="MEI">Meio-campo</option>
-              <option value="ATA">Atacante</option>
+              <option value="">Não, joga na linha</option>
+              <option value="GOL">Sim, é goleiro</option>
             </select>
           </label>
           <label>Nível (1–5)

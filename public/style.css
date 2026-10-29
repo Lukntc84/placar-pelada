@@ -443,9 +443,6 @@ textarea.summary { min-height: 260px; }
 .auth-logo img { border-radius: 16px; width: 56px; height: 56px; }
 .auth-logo h1 { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 2.6rem; line-height: 1; letter-spacing: .5px; text-transform: uppercase; }
 .auth-logo p { margin: 0; color: var(--muted); }
-.auth-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); background: #e9ece7; border-radius: 14px; padding: 4px; }
-.auth-tabs button { border: 0; background: none; color: var(--muted); font-weight: 500; min-height: 44px; }
-.auth-tabs button.on { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: var(--shadow); }
 .auth form { display: flex; flex-direction: column; gap: 16px; }
 .pwd { display: flex; align-items: center; gap: 6px; }
 .pwd input { flex: 1; min-width: 0; }
@@ -578,3 +575,21 @@ body.logged-out .top, body.logged-out main, body.logged-out .tabs, body.logged-o
   .qrow .pos { min-width: 16px; }
   .acts .ibtn-remove { margin-left: 8px; }
 }
+
+/* ------------------------------------------------- sign-up / login */
+.auth-title { font-size: 1.5rem; margin: 0; }
+.auth label { font-size: 1rem; font-weight: 700; gap: 8px; }
+.auth label small { font-size: .9rem; font-weight: 500; color: var(--muted); }
+.auth input { min-height: 54px; font-size: 1.1rem; }
+.auth input[aria-invalid] { border-color: var(--danger); border-width: 2px; }
+.field-error { color: var(--danger); font-size: .95rem; font-weight: 600; }
+.field-error:empty, .auth-error:empty { display: none; }
+.auth .pwd button { min-height: 54px; padding: 0 14px; font-weight: 600; }
+.auth .primary.big { min-height: 56px; font-size: 1.15rem; }
+.gk-choice { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.gk-choice legend { font-weight: 700; padding: 0; margin-bottom: 8px; }
+.gk-choice .big-choice { margin-top: 0; }
+.gk-choice .big-choice button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.gk-choice small { color: var(--muted); font-size: .9rem; }
+.auth-switch { display: flex; flex-direction: column; gap: 8px; align-items: stretch; text-align: center; margin-top: 8px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); }
+.auth-switch .big { min-height: 54px; font-weight: 700; font-size: 1.05rem; }

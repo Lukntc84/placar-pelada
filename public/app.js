@@ -197,29 +197,52 @@ function showAuth(message = '') {
   sseOpen = false;
   S = null;
   $('#auth').hidden = false;
-  $('#authError').textContent = message;
+  clearAuthErrors();
+  if (message) authError($('#loginForm'), 'form', message);
   document.body.classList.add('logged-out');
 }
 
+// Errors show right under the field they are about, so they stay visible
+// next to what needs fixing (and are not hidden behind the keyboard).
+function authError(form, field, msg) {
+  const el = form.querySelector(`[data-err="${field}"]`) || form.querySelector('[data-err="form"]');
+  el.textContent = msg;
+  const input = form.querySelector(`[name="${field}"]`);
+  if (input) { input.setAttribute('aria-invalid', 'true'); input.focus(); }
+}
+function clearAuthErrors() {
+  document.querySelectorAll('#auth [data-err]').forEach((el) => { el.textContent = ''; });
+  document.querySelectorAll('#auth [aria-invalid]').forEach((el) => el.removeAttribute('aria-invalid'));
+}
+
 function setAuthMode(mode) {
-  document.querySelectorAll('[data-auth]').forEach((b) => b.classList.toggle('on', b.dataset.auth === mode));
   $('#loginForm').hidden = mode !== 'login';
   $('#registerForm').hidden = mode !== 'register';
-  $('#authError').textContent = '';
+  clearAuthErrors();
+  window.scrollTo(0, 0);
+  $('#auth').scrollTop = 0;
   const first = (mode === 'login' ? $('#loginForm') : $('#registerForm')).querySelector('input');
   if (first) first.focus();
 }
 
-async function submitAuth(url, body, button) {
-  $('#authError').textContent = '';
+// Server error codes -> the field they belong to.
+const AUTH_FIELD = { BAD_LOGIN: 'form', PHONE_EXISTS: 'phone', PHONE_TAKEN: 'phone', BAD_PHONE: 'phone', PLAYER_TAKEN: 'name', PLAYER_EXISTS: 'name', BAD_NAME: 'name', BAD_PASSWORD: 'password' };
+
+async function submitAuth(form, url, body) {
+  clearAuthErrors();
+  const button = form.querySelector('[type=submit]');
   button.disabled = true;
   try {
     const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const data = await r.json().catch(() => ({}));
-    if (!data.ok) { $('#authError').textContent = data.error || 'Não foi possível entrar.'; return null; }
+    if (!data.ok) {
+      const field = AUTH_FIELD[data.code] ?? (/celular|telefone/i.test(data.error || '') ? 'phone' : /senha/i.test(data.error || '') && data.code !== 'BAD_LOGIN' ? 'password' : 'form');
+      authError(form, field, data.error || 'Não foi possível entrar.');
+      return null;
+    }
     return data.user;
   } catch {
-    $('#authError').textContent = 'Sem conexão. Tente de novo.';
+    authError(form, 'form', 'Sem conexão. Tente de novo.');
     return null;
   } finally {
     button.disabled = false;
@@ -260,30 +283,53 @@ document.querySelectorAll('#auth input[type=tel]').forEach((i) => i.addEventList
 document.querySelectorAll('[data-showpwd]').forEach((b) => b.addEventListener('click', () => {
   const input = b.parentElement.querySelector('input');
   input.type = input.type === 'password' ? 'text' : 'password';
-  b.textContent = input.type === 'password' ? 'mostrar' : 'esconder';
+  b.textContent = input.type === 'password' ? 'Mostrar' : 'Esconder';
 }));
+document.querySelectorAll('#auth input').forEach((i) => i.addEventListener('input', () => {
+  i.removeAttribute('aria-invalid');
+  const err = i.closest('label')?.querySelector('.field-error');
+  if (err) err.textContent = '';
+}));
+
+// "Você joga no gol?" (Não / Sim): the only player detail asked at sign-up.
+let signupGk = false;
+function setSignupGk(on) {
+  signupGk = on;
+  document.querySelectorAll('[data-gk]').forEach((b) => {
+    const sel = (b.dataset.gk === '1') === on;
+    b.classList.toggle('on', sel);
+    b.setAttribute('aria-pressed', String(sel));
+  });
+}
+document.querySelectorAll('[data-gk]').forEach((b) => b.addEventListener('click', () => setSignupGk(b.dataset.gk === '1')));
+
+const phoneDigits = (v) => v.replace(/\D/g, '');
 
 $('#loginForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const f = e.target;
-  if (!f.phone.value || !f.password.value) { $('#authError').textContent = 'Preencha celular e senha.'; return; }
-  const user = await submitAuth('/api/auth/login', { phone: f.phone.value, password: f.password.value }, f.querySelector('[type=submit]'));
-  if (user) { f.password.value = ''; startApp(user); toast(`Olá, ${user.name}!`, 'ok'); }
+  clearAuthErrors();
+  if (phoneDigits(f.phone.value).length < 10) return authError(f, 'phone', f.phone.value ? 'Confira o número: falta o DDD ou algum dígito.' : 'Digite seu celular com DDD.');
+  if (!f.password.value) return authError(f, 'password', 'Digite sua senha.');
+  const user = await submitAuth(f, '/api/auth/login', { phone: f.phone.value, password: f.password.value });
+  if (user) { f.password.value = ''; startApp(user); toast(`Olá, ${user.name.split(' ')[0]}!`, 'ok'); }
 });
 
 $('#registerForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const f = e.target;
-  if (!f.name.value.trim()) { $('#authError').textContent = 'Informe seu nome.'; return; }
-  if (f.phone.value.replace(/\D/g, '').length < 10) { $('#authError').textContent = 'Celular inválido. Use DDD + número.'; return; }
-  if (f.password.value.length < 6) { $('#authError').textContent = 'A senha precisa ter pelo menos 6 caracteres.'; return; }
-  const user = await submitAuth('/api/auth/register', {
-    name: f.name.value, phone: f.phone.value, password: f.password.value, position: f.position.value, newPlayer: true,
-  }, f.querySelector('[type=submit]'));
+  clearAuthErrors();
+  if (!f.name.value.trim()) return authError(f, 'name', 'Digite seu nome.');
+  if (phoneDigits(f.phone.value).length < 10) return authError(f, 'phone', f.phone.value ? 'Confira o número: falta o DDD ou algum dígito.' : 'Digite seu celular com DDD.');
+  if (f.password.value.length < 6) return authError(f, 'password', 'A senha precisa ter pelo menos 6 letras ou números.');
+  const user = await submitAuth(f, '/api/auth/register', {
+    name: f.name.value, phone: f.phone.value, password: f.password.value, position: signupGk ? 'GOL' : '', newPlayer: true,
+  });
   if (user) {
     f.reset();
+    setSignupGk(false);
     startApp(user);
-    toast(`Bem-vindo, ${user.name.split(' ')[0]}! Seu jogador já está cadastrado.`, 'ok');
+    toast(`Bem-vindo, ${user.name.split(' ')[0]}! Sua conta está pronta.`, 'ok');
   }
 });
 
@@ -300,8 +346,7 @@ async function linkMeModal() {
       <p class="muted">Cria seu jogador com o nome da conta (${esc(ME.name)}).</p>
       <div class="rsvp-open">
         <select id="linkPos">
-          <option value="">Posição…</option><option value="GOL">Goleiro</option><option value="ZAG">Zagueiro</option>
-          <option value="LAT">Lateral</option><option value="MEI">Meio-campo</option><option value="ATA">Atacante</option>
+          <option value="">Jogo na linha</option><option value="GOL">Jogo no gol</option>
         </select>
         <button class="primary small" data-act="linkNew">Criar meu jogador</button>
       </div>
@@ -1347,7 +1392,7 @@ function renderPlayerRows(active) {
   $('#playerRows').innerHTML = `
     ${active.length ? `<ul class="plist">${active.map((p) => `<li>
       <div><b>${esc(p.name)}</b>${p.nickname ? ` <span class="muted">"${esc(p.nickname)}"</span>` : ''}
-        <small class="muted">${POS[p.position] || ''} ${'★'.repeat(p.rating)}</small></div>
+        <small class="muted">${p.position === 'GOL' ? 'Goleiro' : 'Linha'} · ${'★'.repeat(p.rating)}</small></div>
       <div class="acts"><button class="small ghost" data-act="editPlayer" data-player="${p.id}">editar</button>
         <button class="small ghost danger-text" data-act="delPlayer" data-player="${p.id}">excluir</button></div>
     </li>`).join('')}</ul>` : `<p class="muted">${playerQuery ? 'Nenhum jogador encontrado.' : 'Nenhum jogador ainda.'}</p>`}`;
@@ -1391,6 +1436,10 @@ function renderSettings() {
 
   $('#setAccount').innerHTML = `
     <div class="setting"><div class="setting-text"><b>${esc(ME.name)}</b><small>${esc(ME.phone)} · ${ROLE_LABEL[ME.role]}</small></div></div>
+    ${ME.playerId ? `<div class="setting">
+      <div class="setting-text"><b>Jogo no gol</b><small>Ligado: você entra como goleiro no sorteio. Desligue para jogar na linha.</small></div>
+      <button class="switch ${player(ME.playerId)?.position === 'GOL' ? 'on' : ''}" data-act="toggleMyGk" role="switch" aria-checked="${player(ME.playerId)?.position === 'GOL'}" aria-label="Jogo no gol"><span></span></button>
+    </div>` : ''}
     <div class="setting">
       <div class="setting-text"><b>Na pelada você é</b><small>${ME.playerId ? esc(player(ME.playerId)?.name || '—') : 'Ainda não escolheu seu nome'}</small></div>
       <button class="small ${ME.playerId ? 'ghost' : 'primary'}" data-act="linkMe">${ME.playerId ? 'Trocar' : 'Escolher'}</button>
@@ -1998,8 +2047,7 @@ const actions = {
         <div class="form-grid">
           <label>Posição
             <select name="position">
-              <option value="">Linha</option><option value="GOL">Goleiro</option><option value="ZAG">Zagueiro</option>
-              <option value="LAT">Lateral</option><option value="MEI">Meio-campo</option><option value="ATA">Atacante</option>
+              <option value="">Linha</option><option value="GOL">Goleiro</option>
             </select>
           </label>
           <label>Nível
@@ -2082,7 +2130,7 @@ const actions = {
     editingPlayerId = p.id;
     f.name.value = p.name;
     f.nickname.value = p.nickname;
-    f.position.value = p.position;
+    f.position.value = p.position === 'GOL' ? 'GOL' : '';
     f.rating.value = String(p.rating);
     $('#playerFormTitle').textContent = 'Editar jogador';
     $('#playerSubmit').textContent = 'Salvar';
@@ -2103,6 +2151,11 @@ const actions = {
     if (v !== S.settings[d.key]) changeSetting(d.key, v);
   },
   setTie(d) { if (S.settings.tieRule !== d.v) changeSetting('tieRule', d.v); },
+  async toggleMyGk() {
+    const on = player(ME.playerId)?.position !== 'GOL';
+    const r = await act('POST', '/api/auth/goalkeeper', { goalkeeper: on });
+    if (r?.ok) toast(on ? 'Pronto: você entra como goleiro.' : 'Pronto: você joga na linha.', 'ok');
+  },
   toggleAuto() { changeSetting('autoRating', !S.settings.autoRating); },
   backup() { location.href = '/api/backup'; },
 };
@@ -2127,7 +2180,9 @@ document.addEventListener('click', (e) => {
 $('#playerForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const f = e.target;
-  const body = { name: f.name.value, nickname: f.nickname.value, position: f.position.value, rating: Number(f.rating.value) };
+  const old = editingPlayerId && player(editingPlayerId);
+  const position = f.position.value || (old && old.position !== 'GOL' ? old.position : '');
+  const body = { name: f.name.value, nickname: f.nickname.value, position, rating: Number(f.rating.value) };
   const r = editingPlayerId
     ? await act('PUT', `/api/players/${editingPlayerId}`, body)
     : await act('POST', '/api/players', body);

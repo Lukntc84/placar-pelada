@@ -254,3 +254,19 @@ test('sign-up creates the player (or links an unowned one); guest added on the s
     assert.deepEqual(g2.queued, [g2.player.id]);
   } finally { await stop(); }
 });
+
+test('a player can switch between goalkeeper and line on their own', async () => {
+  const { anon, login, stop } = await startServer();
+  try {
+    const reg = await anon('POST', '/api/auth/register', { name: 'Goleiro Zé', phone: '61944440000', password: 'abcdef', position: 'GOL' });
+    assert.equal(reg.ok, true, reg.error);
+    const me = await login('61944440000', 'abcdef');
+    const toLine = await me('POST', '/api/auth/goalkeeper', { goalkeeper: false });
+    assert.equal(toLine.player.position, '');
+    const back = await me('POST', '/api/auth/goalkeeper', { goalkeeper: true });
+    assert.equal(back.player.position, 'GOL');
+    assert.equal((await me('POST', '/api/auth/goalkeeper', { goalkeeper: true })).already, true);
+    // Other player fields stay with the organizer.
+    assert.equal((await me('PUT', `/api/players/${reg.user.playerId}`, { name: 'X' })).status, 403);
+  } finally { await stop(); }
+});
