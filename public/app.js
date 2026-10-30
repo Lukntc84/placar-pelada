@@ -2277,14 +2277,15 @@ const actions = {
     const all = d.scope === 'all';
     const typed = await ask({
       title: all ? 'Zerar todos os dados de jogo?' : 'Apagar os jogadores fictícios?',
-      text: `${all ? 'Apaga <b>todos</b> os jogadores, partidas e estatísticas. As contas continuam.' : 'Apaga os fictícios e as partidas em que eles jogaram.'} Para confirmar, digite <b>ZERAR</b>.`,
+      text: `${all ? `Apaga <b>todos</b> os jogadores, partidas, estatísticas e presenças${$('#resetAccounts').checked ? ' e <b>todas as contas, menos a sua</b>' : '. As contas continuam'}.` : 'Apaga os fictícios e as partidas em que eles jogaram.'} Para confirmar, digite <b>ZERAR</b>.`,
       ok: all ? 'Zerar tudo' : 'Apagar fictícios', danger: true, input: { placeholder: 'ZERAR', label: 'Digite ZERAR' },
     });
     if (typed === null) return;
-    const r = await act('POST', '/api/admin/reset', { scope: d.scope, confirm: typed.trim().toUpperCase() });
+    const r = await act('POST', '/api/admin/reset', { scope: d.scope, confirm: typed.trim().toUpperCase(), accounts: all && $('#resetAccounts').checked });
     if (r?.ok) {
       builder.assign.clear();
-      toast(all ? 'Dados zerados. Pronto para o lançamento!' : `${r.removed} jogadores fictícios apagados.`, 'ok');
+      toast(all ? `Tudo zerado${r.removedAccounts ? ` (${plural(r.removedAccounts, 'conta apagada', 'contas apagadas')})` : ''}. Pronto para o lançamento!` : `${r.removed} jogadores fictícios apagados.`, 'ok');
+      loadUsers();
       loadBackups();
     }
   },

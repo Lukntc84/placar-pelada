@@ -323,3 +323,31 @@ test('presence is kept per day for the attendance chart', async () => {
     assert.equal((await req('GET', '/api/state')).presenceLog['2026-10-28'], undefined);
   } finally { await stop(); }
 });
+
+test('launch reset can also remove every account except the owner', async () => {
+  const { req, anon, login, stop } = await startServer();
+  try {
+    await anon('POST', '/api/auth/register', { name: 'Amigo Um', phone: '61911112233', password: 'abcdef' });
+    await anon('POST', '/api/auth/register', { name: 'Amigo Dois', phone: '61922223344', password: 'abcdef' });
+    const amigo = await login('61911112233', 'abcdef');
+    const p = (await req('GET', '/api/state')).players[0].id;
+    await req('POST', '/api/attendance', { playerIds: [p], present: true, date: '2026-10-30' });
+    // Another admin can't wipe accounts; only the owner.
+    const users = (await req('GET', '/api/users')).users;
+    await req('PUT', `/api/users/${users.find((u) => u.name === 'Amigo Dois').id}`, { role: 'admin' });
+    const vice = await login('61922223344', 'abcdef');
+    assert.equal((await vice('POST', '/api/admin/reset', { scope: 'all', confirm: 'ZERAR', accounts: true })).status, 403);
+
+    const r = await req('POST', '/api/admin/reset', { scope: 'all', confirm: 'ZERAR', accounts: true });
+    assert.equal(r.removedAccounts, 2);
+    const left = (await req('GET', '/api/users')).users;
+    assert.equal(left.length, 1);
+    assert.equal(left[0].owner, true);
+    const s = await req('GET', '/api/state');
+    assert.deepEqual([s.players.length, s.matches.length], [0, 0]);
+    assert.deepEqual(s.presenceLog, {});
+    assert.equal((await amigo('GET', '/api/state')).status, 401); // their session is gone
+    // The phone can sign up again from scratch.
+    assert.equal((await anon('POST', '/api/auth/register', { name: 'Amigo Um', phone: '61911112233', password: 'abcdef' })).ok, true);
+  } finally { await stop(); }
+});

@@ -604,9 +604,14 @@ app.post('/api/admin/seed', ...adminOnly, action((db, b) => {
 
 // Wipes game data for launch: players, matches, queue, presence and
 // confirmations. Accounts and rules stay. A safety copy is saved first.
-app.post('/api/admin/reset', ...adminOnly, action((db, b) => {
+app.post('/api/admin/reset', ...adminOnly, action((db, b, req) => {
   if (b.confirm !== 'ZERAR') throw bad('Para confirmar, digite ZERAR.');
   if (b.scope !== 'all' && b.scope !== 'demo') throw bad('Escolha o que apagar.');
+  const owner = ownerOf(db);
+  const wipeAccounts = b.scope === 'all' && b.accounts === true;
+  if (wipeAccounts && (!owner || req.user.id !== owner.id)) {
+    throw new HttpError(403, 'FORBIDDEN', 'Só o dono do app pode apagar as contas.');
+  }
   const backup = backups.saveCopy(b.scope === 'all' ? 'antes-de-zerar' : 'antes-de-limpar-testes');
   if (b.scope === 'demo') {
     // demo flag, or the "(teste)" suffix (the MySQL table keeps only fixed columns)
@@ -620,6 +625,10 @@ app.post('/api/admin/reset', ...adminOnly, action((db, b) => {
     db.rsvp.yes = db.rsvp.yes.filter((id) => !demo.has(id));
     db.rsvp.no = db.rsvp.no.filter((id) => !demo.has(id));
     for (const u of db.users) if (demo.has(u.playerId)) u.playerId = null;
+    for (const d of Object.keys(db.presenceLog || {})) {
+      db.presenceLog[d] = db.presenceLog[d].filter((id) => !demo.has(id));
+      if (!db.presenceLog[d].length) delete db.presenceLog[d];
+    }
     return { backup, removed: demo.size };
   }
   db.players = [];
@@ -627,11 +636,20 @@ app.post('/api/admin/reset', ...adminOnly, action((db, b) => {
   db.queue = [];
   db.teams = [];
   db.attendance = { date: null, present: [] };
+  db.presenceLog = {};
   db.rsvp = { date: null, open: false, yes: [], no: [] };
   db.gkDuty = {};
   db.bench = {};
+  db.idem = {};
   for (const u of db.users) u.playerId = null;
-  return { backup };
+  let removedAccounts = 0;
+  if (wipeAccounts) {
+    // Launch: only the owner's account stays; everyone else signs up again.
+    removedAccounts = db.users.length - 1;
+    db.users = [owner];
+    for (const [h, sess] of Object.entries(db.sessions)) if (sess.userId !== owner.id) delete db.sessions[h];
+  }
+  return { backup, removedAccounts };
 }));
 
 app.put('/api/settings', ...adminOnly, action((db, b) => {
